@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Toggle row in mod menu -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="@dimen/mod_item_height"
+    android:orientation="horizontal"
+    android:gravity="center_vertical"
+    android:paddingStart="2dp"
+    android:paddingEnd="2dp"
+    android:background="@drawable/bg_mod_item"
+    android:layout_marginBottom="4dp"
+    android:padding="6dp">
+
+    <ImageView
+        android:id="@+id/itemIcon"
+        android:layout_width="18dp"
+        android:layout_height="18dp"
+        android:src="@drawable/ic_power"
+        android:contentDescription="icon"/>
+
+    <TextView
+        android:id="@+id/itemLabel"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:text="Feature"
+        android:textSize="12sp"
+        android:textColor="@color/text_primary"
+        android:layout_marginStart="8dp"/>
+
+    <!-- Toggle switch (custom) -->
+    <FrameLayout
+        android:id="@+id/toggleContainer"
+        android:layout_width="@dimen/toggle_width"
+        android:layout_height="@dimen/toggle_height">
+
+        <View
+            android:id="@+id/toggleBg"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:background="@drawable/bg_toggle_off"/>
+
+        <View
+            android:id="@+id/toggleThumb"
+            android:layout_width="16dp"
+            android:layout_height="16dp"
+            android:layout_gravity="center_vertical|start"
+            android:layout_marginStart="3dp"
+            android:background="@drawable/thumb_toggle"/>
+    </FrameLayout>
+</LinearLayout>

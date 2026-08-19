@@ -1,0 +1,20 @@
+# Built artifacts
+build/
+app/build/
+.gradle/
+*.iml
+.idea/
+local.properties
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# APK / AAB / mapping files
+*.apk
+*.aab
+mapping.txt
+
+# Keystore (don't commit signing keys)
+*.keystore
+*.jks

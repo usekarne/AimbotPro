@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <dimen name="mod_menu_width">280dp</dimen>
+    <dimen name="mod_menu_corner">14dp</dimen>
+    <dimen name="mod_item_height">44dp</dimen>
+    <dimen name="mod_padding">12dp</dimen>
+    <dimen name="mod_header_height">48dp</dimen>
+    <dimen name="toggle_width">44dp</dimen>
+    <dimen name="toggle_height">22dp</dimen>
+    <dimen name="btn_corner">12dp</dimen>
+    <dimen name="card_corner">16dp</dimen>
+</resources>

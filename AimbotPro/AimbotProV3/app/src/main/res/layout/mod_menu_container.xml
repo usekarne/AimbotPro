@@ -1,0 +1,132 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Mod menu floating overlay layout -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/modMenuRoot"
+    android:layout_width="@dimen/mod_menu_width"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:background="@drawable/bg_mod_menu">
+
+    <!-- Header (draggable) -->
+    <LinearLayout
+        android:id="@+id/modMenuHeader"
+        android:layout_width="match_parent"
+        android:layout_height="@dimen/mod_header_height"
+        android:orientation="horizontal"
+        android:background="@drawable/bg_mod_menu_header"
+        android:gravity="center_vertical"
+        android:paddingStart="@dimen/mod_padding"
+        android:paddingEnd="@dimen/mod_padding">
+
+        <ImageView
+            android:layout_width="20dp"
+            android:layout_height="20dp"
+            android:src="@drawable/ic_drag_handle"
+            android:contentDescription="drag"/>
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="@string/mod_menu_title"
+            android:textSize="13sp"
+            android:textStyle="bold"
+            android:textColor="@color/text_on_brand"
+            android:layout_marginStart="8dp"/>
+
+        <ImageButton
+            android:id="@+id/btnCollapse"
+            android:layout_width="28dp"
+            android:layout_height="28dp"
+            android:src="@drawable/ic_collapse"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:contentDescription="collapse"/>
+
+        <ImageButton
+            android:id="@+id/btnClose"
+            android:layout_width="28dp"
+            android:layout_height="28dp"
+            android:src="@drawable/ic_close"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:contentDescription="close"/>
+    </LinearLayout>
+
+    <!-- Body -->
+    <LinearLayout
+        android:id="@+id/modMenuBody"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="@dimen/mod_padding">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/mod_menu_subtitle"
+            android:textSize="10sp"
+            android:textColor="@color/text_muted"
+            android:layout_marginBottom="6dp"/>
+
+        <!-- Section: AIM -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/mod_section_aim"
+            android:textSize="10sp"
+            android:textColor="@color/brand_primary"
+            android:textStyle="bold"
+            android:layout_marginTop="6dp"/>
+
+        <LinearLayout android:id="@+id/sectionAim" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical"/>
+
+        <!-- Section: VISUAL -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/mod_section_visual"
+            android:textSize="10sp"
+            android:textColor="@color/brand_primary"
+            android:textStyle="bold"
+            android:layout_marginTop="10dp"/>
+
+        <LinearLayout android:id="@+id/sectionVisual" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical"/>
+
+        <!-- Section: MISC -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/mod_section_misc"
+            android:textSize="10sp"
+            android:textColor="@color/brand_primary"
+            android:textStyle="bold"
+            android:layout_marginTop="10dp"/>
+
+        <LinearLayout android:id="@+id/sectionMisc" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical"/>
+
+        <!-- Status footer -->
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:background="#22FFFFFF"
+            android:layout_marginTop="10dp"
+            android:layout_marginBottom="6dp"/>
+
+        <TextView
+            android:id="@+id/statusFooter"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Idle"
+            android:textSize="10sp"
+            android:textColor="@color/brand_primary"
+            android:textStyle="bold"/>
+
+        <TextView
+            android:id="@+id/fpsFooter"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:text="FPS: -- | Targets: 0"
+            android:textSize="10sp"
+            android:textColor="@color/text_secondary"/>
+    </LinearLayout>
+</LinearLayout>

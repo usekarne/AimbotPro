@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">AimbotPro</string>
+    <string name="app_version">v3.0.0</string>
+
+    <!-- Notification -->
+    <string name="notif_channel_id">aimbot_pro_channel</string>
+    <string name="notif_channel_name">AimbotPro Service</string>
+    <string name="notif_channel_desc">Persistent capture + inference service</string>
+    <string name="notif_title">AimbotPro Active</string>
+    <string name="notif_text">Screen capture + AI inference running</string>
+
+    <!-- Accessibility -->
+    <string name="accessibility_service_label">AimbotPro Input Service</string>
+    <string name="accessibility_service_desc">Synthetic gesture dispatch for aim assist in your own games.</string>
+
+    <!-- Main activity -->
+    <string name="title_main">AimbotPro v3</string>
+    <string name="subtitle_main">Production AI Aimbot — OpenCV-free, TFLite YOLO</string>
+
+    <string name="btn_start">START AIMBOT</string>
+    <string name="btn_stop">STOP AIMBOT</string>
+    <string name="btn_grant_overlay">Grant Overlay Permission</string>
+    <string name="btn_grant_accessibility">Grant Accessibility</string>
+    <string name="btn_grant_capture">Grant Screen Capture</string>
+    <string name="btn_grant_notifications">Grant Notifications</string>
+
+    <!-- Status -->
+    <string name="status_idle">Idle</string>
+    <string name="status_running">Running</string>
+    <string name="status_no_overlay">Overlay: OFF</string>
+    <string name="status_no_accessibility">Accessibility: OFF</string>
+    <string name="status_no_capture">Capture: OFF</string>
+    <string name="status_no_model">Model: not loaded</string>
+
+    <!-- Mod Menu -->
+    <string name="mod_menu_title">AIMBOT PRO</string>
+    <string name="mod_menu_subtitle">Tap to toggle features</string>
+    <string name="mod_section_aim">AIM</string>
+    <string name="mod_section_visual">VISUAL</string>
+    <string name="mod_section_misc">MISC</string>
+
+    <string name="feat_aimbot">Aimbot</string>
+    <string name="feat_triggerbot">Trigger Bot</string>
+    <string name="feat_recoil">Recoil Control</string>
+    <string name="feat_smooth">Aim Smooth</string>
+    <string name="feat_esp">ESP Boxes</string>
+    <string name="feat_esp_lines">ESP Lines</string>
+    <string name="feat_esp_distance">ESP Distance</string>
+    <string name="feat_esp_names">ESP Names</string>
+    <string name="feat_fov_circle">FOV Circle</string>
+    <string name="feat_crosshair">Crosshair</string>
+    <string name="feat_silent_aim">Silent Aim</string>
+    <string name="feat_anti_recoil">Anti-Recoil</string>
+    <string name="feat_headshot_mode">Headshot Priority</string>
+
+    <!-- Sliders -->
+    <string name="slider_aim_speed">Aim Speed</string>
+    <string name="slider_aim_fov">Aim FOV</string>
+    <string name="slider_aim_smooth">Smoothness</string>
+    <string name="slider_trigger_delay">Trigger Delay (ms)</string>
+    <string name="slider_confidence">Min Confidence</string>
+
+    <!-- Permissions -->
+    <string name="perm_overlay_required">Overlay permission required for floating mod menu.</string>
+    <string name="perm_accessibility_required">Accessibility required for input injection.</string>
+    <string name="perm_capture_required">Screen capture required for detection.</string>
+    <string name="perm_notifications_required">Notifications required for foreground service.</string>
+
+    <!-- Granted state labels -->
+    <string name="status_overlay_on">Overlay: ON</string>
+    <string name="status_accessibility_on">Accessibility: ON</string>
+    <string name="status_notifications_on">Notifications: ON</string>
+    <string name="status_capture_ready">Capture: ready</string>
+
+    <!-- Footer -->
+    <string name="footer_disclaimer">For use ONLY on user-owned games / testing environments. Misuse is the user\'s responsibility.</string>
+</resources>

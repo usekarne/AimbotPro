@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Brand palette -->
+    <color name="brand_primary">#00FF88</color>
+    <color name="brand_primary_dark">#00CC6E</color>
+    <color name="brand_accent">#FF00AA</color>
+    <color name="brand_warning">#FFB300</color>
+    <color name="brand_error">#FF3D3D</color>
+
+    <!-- Backgrounds -->
+    <color name="bg_main">#0A0E1A</color>
+    <color name="bg_surface">#12182B</color>
+    <color name="bg_surface_alt">#1A2138</color>
+    <color name="bg_overlay_panel">#F0121820</color>
+    <color name="bg_overlay_header">#F000CC6E</color>
+    <color name="bg_toggle_off">#3D4252</color>
+    <color name="bg_toggle_on">#00CC6E</color>
+
+    <!-- Text -->
+    <color name="text_primary">#ECEFF4</color>
+    <color name="text_secondary">#8893A8</color>
+    <color name="text_muted">#5A6378</color>
+    <color name="text_on_brand">#0A0E1A</color>
+
+    <!-- ESP colors -->
+    <color name="esp_enemy">#FF3D3D</color>
+    <color name="esp_ally">#3D7BFF</color>
+    <color name="esp_target">#FFEB3B</color>
+    <color name="esp_text">#FFFFFF</color>
+    <color name="fov_circle">#00FF88</color>
+    <color name="crosshair">#FFFFFF</color>
+
+    <!-- Misc -->
+    <color name="transparent">#00000000</color>
+    <color name="scrim">#80000000</color>
+</resources>

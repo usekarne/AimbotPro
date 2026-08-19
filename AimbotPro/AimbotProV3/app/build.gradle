@@ -1,0 +1,165 @@
+plugins {
+    id 'com.android.application'
+    id 'org.jetbrains.kotlin.android'
+}
+
+android {
+    namespace 'com.webstrike.aimbotpro'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId "com.webstrike.aimbotpro"
+        minSdk 26
+        targetSdk 34
+        versionCode 4
+        versionName "4.0.0"
+
+        ndk {
+            abiFilters 'arm64-v8a', 'armeabi-v7a', 'x86_64'
+        }
+
+        // Build-hash for production telemetry / crash reporting.
+        // Reads from gradle property `buildHash` if set (CI-friendly),
+        // otherwise falls back to "dev" for local builds.
+        // NOTE: we deliberately do NOT call `git rev-parse` here — that
+        // would start an external process during configuration time,
+        // which breaks Gradle's configuration cache. CI should pass
+        // `-PbuildHash=...` on the gradle command line.
+        buildConfigField "String", "BUILD_HASH",
+                "\"${project.findProperty('buildHash') ?: 'dev'}\""
+    }
+
+    aaptOptions {
+        noCompress "tflite"
+    }
+
+    packagingOptions {
+        exclude 'META-INF/INDEX.LIST'
+        exclude 'META-INF/DEPENDENCIES'
+        exclude 'META-INF/LICENSE'
+        exclude 'META-INF/LICENSE.txt'
+        exclude 'META-INF/NOTICE'
+        exclude 'META-INF/NOTICE.txt'
+        exclude 'META-INF/*.kotlin_module'
+        exclude 'META-INF/proguard/androidx-annotations.pro'
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled true
+            shrinkResources true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            // Sign with the debug keystore when no release keystore is provided
+            // via the `AIMBOT_KEYSTORE_FILE` env var. This is convenient for
+            // local / CI debug builds and lets the release variant be installed
+            // immediately. For a real production release, set the env vars
+            // AIMBOT_KEYSTORE_FILE / AIMBOT_KEYSTORE_PASSWORD / AIMBOT_KEY_ALIAS
+            // / AIMBOT_KEY_PASSWORD and rebuild.
+            signingConfig findProperty('releaseKeystore') ?
+                signingConfigs.release : signingConfigs.debug
+            buildConfigField "boolean", "DEBUG_MODE", "false"
+            // Hide all logs except WARN / ERROR in release (Logger.ReleaseTree
+            // already filters; this is the build-time level cap).
+            buildConfigField "int", "MIN_LOG_LEVEL", "3"  // Log.WARN
+        }
+        debug {
+            minifyEnabled false
+            debuggable true
+            buildConfigField "boolean", "DEBUG_MODE", "true"
+            buildConfigField "int", "MIN_LOG_LEVEL", "2"  // Log.VERBOSE
+        }
+    }
+
+    // Optional release signing config — enabled only if the build machine
+    // has the AIMBOT_KEYSTORE_FILE property defined (in ~/.gradle/gradle.properties
+    // or via -P on the gradle command line). Otherwise the debug keystore is used.
+    if (findProperty('releaseKeystore') != null) {
+        signingConfigs {
+            release {
+                storeFile file(findProperty('releaseKeystore'))
+                storePassword findProperty('releaseKeystorePassword')
+                keyAlias findProperty('releaseKeyAlias')
+                keyPassword findProperty('releaseKeyPassword')
+            }
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    kotlinOptions {
+        jvmTarget = '17'
+        freeCompilerArgs += ['-opt-in=kotlin.RequiresOptIn',
+                             '-opt-in=kotlinx.coroutines.ExperimentalCoroutinesApi',
+                             '-Xjvm-default=all']
+    }
+
+    buildFeatures {
+        viewBinding true
+        buildConfig true
+    }
+
+    lint {
+        // Strict mode for release builds — surface real issues instead of
+        // hiding them behind `checkReleaseBuilds=false`.
+        abortOnError true
+        checkReleaseBuilds true
+        disable 'MissingTranslation', 'ExtraTranslation'  // app is English-only by design
+        // Defensive warnings to leave ON:
+        enable 'HardcodedText', 'LogConditional', 'ObsoleteLintCustomCheck'
+    }
+
+    sourceSets {
+        main {
+            assets.srcDirs = ['src/main/assets']
+            java.srcDirs = ['src/main/java']
+            res.srcDirs = ['src/main/res']
+        }
+    }
+
+    // Strip native libraries further on release — R8 should handle the
+    // Java side, but TFLite ships some optional .so files we don't need.
+    packagingOptions {
+        jniLibs {
+            // Strip debug symbols from native libs — saves ~30 % on .so size.
+            useLegacyPackaging false
+        }
+    }
+}
+
+dependencies {
+    // AndroidX
+    implementation 'androidx.appcompat:appcompat:1.6.1'
+    implementation 'androidx.core:core-ktx:1.12.0'
+    implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
+    implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.6.2'
+    implementation 'androidx.lifecycle:lifecycle-service:2.6.2'
+    implementation 'androidx.activity:activity-ktx:1.8.2'
+    implementation 'androidx.fragment:fragment-ktx:1.6.2'
+
+    // Material Design
+    implementation 'com.google.android.material:material:1.11.0'
+
+    // TensorFlow Lite (no OpenCV native bloat)
+    implementation 'org.tensorflow:tensorflow-lite:2.14.0'
+    implementation 'org.tensorflow:tensorflow-lite-gpu:2.14.0'
+    implementation 'org.tensorflow:tensorflow-lite-gpu-delegate-plugin:0.4.4'
+    implementation 'org.tensorflow:tensorflow-lite-api:2.14.0'
+    implementation 'org.tensorflow:tensorflow-lite-support:0.4.4'
+
+    // Coroutines
+    implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3'
+    implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.3'
+
+    // Utility
+    implementation 'com.jakewharton.timber:timber:5.0.1'
+    // Gson removed in v4 — was unused (~80 KB), and without ProGuard keep
+    // rules it would silently break reflection-based JSON deserialization
+    // in release builds. Re-add if JSON serialization is needed.
+
+    // Testing
+    testImplementation 'junit:junit:4.13.2'
+    androidTestImplementation 'androidx.test.ext:junit:1.1.5'
+}
