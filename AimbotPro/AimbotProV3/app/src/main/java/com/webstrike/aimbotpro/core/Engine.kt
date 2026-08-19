@@ -401,6 +401,11 @@ class Engine(
         } catch (t: Throwable) {
             Logger.w(TAG, "detector.detect failed: ${t.message}", t)
             return
+        } finally {
+            // Release the frame back to the buffer so the next capture
+            // overwrites it with fresh pixel data instead of the
+            // engine potentially reading stale data.
+            frameBuffer.releaseFrame()
         }
         val detectNs = android.os.SystemClock.elapsedRealtimeNanos() - detectStartNs
 
