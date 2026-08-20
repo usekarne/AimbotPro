@@ -6,7 +6,6 @@ import com.webstrike.aimbotpro.utils.Logger
 import org.tensorflow.lite.Interpreter
 import org.tensorflow.lite.gpu.CompatibilityList
 import org.tensorflow.lite.gpu.GpuDelegate
-import org.tensorflow.lite.gpu.GpuDelegateFactory
 import java.io.FileInputStream
 import java.nio.MappedByteBuffer
 import java.nio.channels.FileChannel
@@ -24,10 +23,9 @@ import kotlin.concurrent.withLock
  * ## GPU acceleration (v4.1 fix)
  * Uses [CompatibilityList] to check device compatibility BEFORE attempting
  * to create a [GpuDelegate]. On incompatible devices, falls back directly to
- * a 4-thread CPU interpreter without the overhead of a failed delegate
- * construction attempt. This avoids the silent-failure pattern where the old
- * no-arg `GpuDelegate()` constructor would create a delegate that then fails
- * during the first inference call.
+ * a 4-thread CPU interpreter. This avoids the silent-failure pattern where
+ * the old no-arg GpuDelegate() constructor would create a delegate that
+ * then fails during the first inference call.
  */
 object ModelManager {
 
@@ -90,46 +88,41 @@ object ModelManager {
             return null
         }
 
-        Logger.w(TAG, "Model asset loaded: ${modelBuffer.capacity().toLocaleString()} bytes")
+        Logger.w(TAG, "Model asset loaded: ${modelBuffer.capacity()} bytes")
 
-        // Try GPU delegate FIRST on compatible devices.
-        // Use CompatibilityList (the recommended TFLite API) to check
-        // whether the device + model combination supports GPU inference.
+        // Try GPU delegate on compatible devices.
         val gpuDelegate: GpuDelegate? = try {
             val compatList = CompatibilityList()
             if (compatList.isDelegateSupportedOnThisDevice) {
-                val delegateOptions = compatList.bestOptionsForThisDevice
-                val delegate = GpuDelegate(delegateOptions)
-                Logger.w(TAG, "GPU delegate created successfully (bestOptions)")
+                val options = compatList.bestOptionsForThisDevice
+                val delegate = GpuDelegate(options)
+                Logger.w(TAG, "GPU delegate created (bestOptions)")
                 delegate
             } else {
-                Logger.w(TAG, "GPU delegate NOT supported on this device — using CPU")
+                Logger.w(TAG, "GPU not supported — using CPU")
                 null
             }
         } catch (t: Throwable) {
-            // CompatibilityList or GpuDelegate constructor threw —
-            // this happens on some emulators and old devices.
-            Logger.w(TAG, "GPU delegate setup failed: ${t.message}")
+            Logger.w(TAG, "GPU delegate failed: ${t.message}")
             null
         }
 
         val options: Interpreter.Options = Interpreter.Options().apply {
             if (gpuDelegate != null) {
                 addDelegate(gpuDelegate)
-                setNumThreads(1) // GPU handles parallelism
+                setNumThreads(1)
             } else {
-                setNumThreads(4) // Use 4 CPU threads for better throughput
+                setNumThreads(4)
             }
         }
 
         return try {
             val interp = Interpreter(modelBuffer, options)
-            // Validate the interpreter by checking input/output shapes.
             val inputShape = interp.getInputTensor(0).shape()
             val outputShape = interp.getOutputTensor(0).shape()
             Logger.w(
                 TAG,
-                "Interpreter created — input=${inputShape.toList()}, output=${outputShape.toList()}"
+                "Interpreter OK — input=${inputShape.toList()}, output=${outputShape.toList()}"
             )
             interp
         } catch (t: Throwable) {
@@ -161,7 +154,7 @@ object ModelManager {
                     .toList()
             }
         } catch (e: java.io.FileNotFoundException) {
-            Logger.w(TAG, "Labels file '$assetPath' not found — using empty label set.")
+            Logger.w(TAG, "Labels file '$assetPath' not found — empty labels")
             emptyList()
         } catch (t: Throwable) {
             Logger.e(TAG, "Failed to load labels '$assetPath'", t)
