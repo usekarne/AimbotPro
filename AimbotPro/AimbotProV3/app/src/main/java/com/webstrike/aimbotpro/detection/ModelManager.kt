@@ -4,7 +4,9 @@ import android.content.Context
 import com.webstrike.aimbotpro.Constants
 import com.webstrike.aimbotpro.utils.Logger
 import org.tensorflow.lite.Interpreter
+import org.tensorflow.lite.gpu.CompatibilityList
 import org.tensorflow.lite.gpu.GpuDelegate
+import org.tensorflow.lite.gpu.GpuDelegateFactory
 import java.io.FileInputStream
 import java.nio.MappedByteBuffer
 import java.nio.channels.FileChannel
@@ -17,12 +19,15 @@ import kotlin.concurrent.withLock
  * Thread-safe. On [init], loads the model file from `assets/models/` and the
  * labels file from `assets/labels/`. If the model file is missing or cannot be
  * loaded, the manager enters **demo mode**: [getInterpreter] returns `null`
- * and [isDemoMode] returns `true`. The rest of the app can keep running on
- * simulated detections so the UI / overlay / services pipeline is fully
- * exercisable without a bundled `.tflite`.
+ * and [isDemoMode] returns `true`.
  *
- * GPU acceleration: tries [GpuDelegate] with device-tuned options from
- * [CompatibilityList]; falls back to a 2-thread CPU interpreter on any failure.
+ * ## GPU acceleration (v4.1 fix)
+ * Uses [CompatibilityList] to check device compatibility BEFORE attempting
+ * to create a [GpuDelegate]. On incompatible devices, falls back directly to
+ * a 4-thread CPU interpreter without the overhead of a failed delegate
+ * construction attempt. This avoids the silent-failure pattern where the old
+ * no-arg `GpuDelegate()` constructor would create a delegate that then fails
+ * during the first inference call.
  */
 object ModelManager {
 
@@ -35,11 +40,6 @@ object ModelManager {
     @Volatile private var demoMode: Boolean = false
     @Volatile private var initialized: Boolean = false
 
-    /**
-     * Must be called once at app startup (idempotent — repeat calls are no-ops).
-     * Uses [context] only to reach the [android.content.res.AssetManager]; the
-     * application context is captured so the caller may safely pass an Activity.
-     */
     fun init(context: Context) {
         lock.withLock {
             if (initialized) return@withLock
@@ -49,7 +49,7 @@ object ModelManager {
             interpreter = loaded
             demoMode = loaded == null
             initialized = true
-            Logger.i(
+            Logger.w(
                 TAG,
                 "init done — demoMode=$demoMode, labels=${labels.size}, " +
                     "hasInterpreter=${interpreter != null}"
@@ -57,19 +57,12 @@ object ModelManager {
         }
     }
 
-    /** Returns the live interpreter, or `null` when in demo mode. */
     fun getInterpreter(): Interpreter? = interpreter
 
-    /** Returns the parsed label list (may be empty if labels file was missing). */
     fun getLabels(): List<String> = labels
 
-    /** True when no real model is loaded — callers should serve simulated data. */
     fun isDemoMode(): Boolean = demoMode
 
-    /**
-     * Release the interpreter and reset all state. Safe to call repeatedly;
-     * allows re-[init] afterwards (used by tests / hot-reload flows).
-     */
     fun release() {
         lock.withLock {
             val interp = interpreter
@@ -90,48 +83,62 @@ object ModelManager {
         val modelBuffer: MappedByteBuffer = try {
             loadModelAsset(context, assetPath)
         } catch (e: java.io.FileNotFoundException) {
-            Logger.w(TAG, "Model file '$assetPath' not found in assets — entering demo mode.")
+            Logger.e(TAG, "Model file '$assetPath' not found in assets — entering demo mode.")
             return null
         } catch (t: Throwable) {
             Logger.e(TAG, "Failed to open model asset '$assetPath'", t)
             return null
         }
 
-        var gpuDelegate: GpuDelegate? = null
-        val options: Interpreter.Options = try {
-            // Use the no-arg GpuDelegate constructor which works across all
-            // TFLite GPU delegate versions. CompatibilityList.bestOptionsForThisDevice
-            // returns a GpuDelegateFactory.Options that is not on the runtime
-            // classpath in some TFLite 2.14 packaging configurations.
-            val delegate = GpuDelegate()
-            gpuDelegate = delegate
-            Logger.i(TAG, "GPU delegate attached for '$modelFileName'.")
-            Interpreter.Options()
-                .addDelegate(delegate)
-                .setNumThreads(1)
+        Logger.w(TAG, "Model asset loaded: ${modelBuffer.capacity().toLocaleString()} bytes")
+
+        // Try GPU delegate FIRST on compatible devices.
+        // Use CompatibilityList (the recommended TFLite API) to check
+        // whether the device + model combination supports GPU inference.
+        val gpuDelegate: GpuDelegate? = try {
+            val compatList = CompatibilityList()
+            if (compatList.isDelegateSupportedOnThisDevice) {
+                val delegateOptions = compatList.bestOptionsForThisDevice
+                val delegate = GpuDelegate(delegateOptions)
+                Logger.w(TAG, "GPU delegate created successfully (bestOptions)")
+                delegate
+            } else {
+                Logger.w(TAG, "GPU delegate NOT supported on this device — using CPU")
+                null
+            }
         } catch (t: Throwable) {
-            Logger.w(TAG, "GPU delegate setup threw — using CPU: ${t.message}")
-            val delegate = gpuDelegate
-            gpuDelegate = null
-            runCatching { delegate?.close() }
-            Interpreter.Options().setNumThreads(2)
+            // CompatibilityList or GpuDelegate constructor threw —
+            // this happens on some emulators and old devices.
+            Logger.w(TAG, "GPU delegate setup failed: ${t.message}")
+            null
+        }
+
+        val options: Interpreter.Options = Interpreter.Options().apply {
+            if (gpuDelegate != null) {
+                addDelegate(gpuDelegate)
+                setNumThreads(1) // GPU handles parallelism
+            } else {
+                setNumThreads(4) // Use 4 CPU threads for better throughput
+            }
         }
 
         return try {
-            Interpreter(modelBuffer, options)
+            val interp = Interpreter(modelBuffer, options)
+            // Validate the interpreter by checking input/output shapes.
+            val inputShape = interp.getInputTensor(0).shape()
+            val outputShape = interp.getOutputTensor(0).shape()
+            Logger.w(
+                TAG,
+                "Interpreter created — input=${inputShape.toList()}, output=${outputShape.toList()}"
+            )
+            interp
         } catch (t: Throwable) {
             Logger.e(TAG, "Interpreter construction failed for '$modelFileName'", t)
-            val delegate = gpuDelegate
-            runCatching { delegate?.close() }
+            runCatching { gpuDelegate?.close() }
             null
         }
     }
 
-    /**
-     * Memory-map the TFLite model file from the assets directory. Required
-     * because [Interpreter] needs a [MappedByteBuffer] (random access) — it
-     * will not accept a streamed InputStream.
-     */
     private fun loadModelAsset(context: Context, assetPath: String): MappedByteBuffer {
         val fd = context.assets.openFd(assetPath)
         FileInputStream(fd.fileDescriptor).use { fis ->

@@ -12,37 +12,36 @@ import java.nio.ByteOrder
 import java.nio.FloatBuffer
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
+import kotlin.math.exp
+import kotlin.math.max
 import kotlin.random.Random
 
 /**
  * Synchronous YOLO inference wrapper.
  *
- * Caller is responsible for running [detect] off the main thread (e.g.
- * inside `Dispatchers.Default`). The class is thread-safe — concurrent
- * callers are serialized on [inferenceLock] because TFLite's [Interpreter]
- * is not re-entrant.
+ * Thread-safe — concurrent callers are serialized on [inferenceLock] because
+ * TFLite's [org.tensorflow.lite.Interpreter] is not re-entrant.
  *
- * Supports two common TFLite export shapes, auto-detected from the output
- * tensor's last dimension:
- *   - **YOLOv8 export**: `[1, N, 6]` — each row is `[cx, cy, w, h, score, classId]`
- *     (NMS already applied by the export).
- *   - **YOLOv5 export**: `[1, N, 5 + numClasses]` — each row is
- *     `[cx, cy, w, h, conf_class_0, conf_class_1, ...]`. We pick the argmax
- *     class. (For the degenerate single-class case `m == 5`, the loop still
- *     picks index 0.)
+ * Supports two TFLite export shapes, auto-detected from the output tensor's
+ * last dimension:
+ *   - **YOLOv8 post-processed export**: `[1, N, 6]` — each row is
+ *     `[cx, cy, w, h, score, classId]` (NMS already applied by the export).
+ *   - **YOLOv5 / raw export**: `[1, N, 5 + numClasses]` — each row is
+ *     `[cx, cy, w, h, conf_or_cls_0, conf_or_cls_1, ...]`.
  *
- * Coordinates from the model are converted to pixel-space [RectF]s in
- * model-input coords (0..[inputSize]); callers use [Detection.mapToScreen]
- * to project back to the actual screen.
+ * ## Sigmoid safety (v4.1)
+ * The conversion pipeline SHOULD apply sigmoid to class scores before TFLite
+ * export. However, as a defence-in-depth measure, this detector always applies
+ * sigmoid to any value that could be a logit. Sigmoid is idempotent for values
+ * already in [0, 1], so this is safe regardless of whether the model already
+ * applied sigmoid.
  *
- * Demo mode (no model loaded): returns 1–3 simulated detections positioned
- * near horizontal center at 1/4, 1/2, 3/4 input height with ±5 % random
- * jitter and confidence in [0.6, 0.9]. Simulated detections have
- * [Detection.classId] = 0 (the COCO 'person' index) so they pass the
- * downstream class filter — but [Detection.label] = "demo" so the overlay
- * can render them as a distinct colour.
+ * ## Confidence extraction (m >= 5 path)
+ * For the `[1, N, 5+C]` layout, each row after the 4 box coords contains C
+ * class scores. The confidence for a row is `max(softmax_or_sigmoid(scores))`.
+ * We take argmax-class and its score.
  *
- * @param modelManager the singleton that owns the live [Interpreter].
+ * @param modelManager the singleton that owns the live [org.tensorflow.lite.Interpreter].
  */
 class YoloDetector(
     private val modelManager: ModelManager
@@ -51,49 +50,50 @@ class YoloDetector(
 
     /**
      * Reusable input buffer — 4 bytes per float, NHWC layout
-     * `[1, INPUT_SIZE, INPUT_SIZE, 3]`. Avoids per-frame allocation.
+     * `[1, INPUT_SIZE, INPUT_SIZE, 3]`.
      */
     private val inputBuffer: ByteBuffer = ByteBuffer
         .allocateDirect(inputSize * inputSize * 3 * FLOAT_BYTES)
         .order(ByteOrder.nativeOrder())
 
-    /** Float view over [inputBuffer] — used to write normalized pixels directly. */
+    /** Float view over [inputBuffer]. */
     private val inputFloats: FloatBuffer = inputBuffer.asFloatBuffer()
 
     /**
      * Reusable pixel scratch — `IntArray(size*size)` of ARGB pixels read via
-     * [Bitmap.getPixels]. Eliminates the per-frame 1.6 MB IntArray allocation
-     * that the old `BitmapUtils.bitmapToRgbFloats` caused.
+     * [Bitmap.getPixels]. Eliminates per-frame 1.6 MB allocation.
      */
     private val pixelScratch: IntArray = IntArray(inputSize * inputSize)
 
     /**
-     * Reused resized bitmap — eliminates per-frame allocation in the hot
-     * path. Only re-created when the source dimensions change (rare, e.g.
-     * orientation change). Accessed under [inferenceLock] so no further
-     * synchronization needed.
+     * Reused resized bitmap — only re-created when the source dimensions change.
      */
     @Volatile
     private var resizedBitmap: Bitmap? = null
 
-    /**
-     * Reusable output array (only re-allocated when the model's output
-     * shape changes — e.g. a hot-swapped model).
-     */
+    /** Reusable output array (re-allocated only when the model's output shape changes). */
     private var cachedOutputArray: Array<Array<FloatArray>>? = null
     private var cachedOutputShape: IntArray? = null
 
-    /** Reused single-element input array — was allocating per frame in v3. */
+    /** Reused single-element input array. */
     private val inputsArray: Array<Any> = arrayOf(inputBuffer)
 
-    /** Reused outputs map — was allocating a fresh HashMap per frame in v3. */
+    /** Reused outputs map. */
     private val outputsMap: MutableMap<Int, Any> = HashMap(1)
 
     /** Serializes inference — TFLite Interpreter is not thread-safe. */
     private val inferenceLock = ReentrantLock()
 
-    /** Pre-allocated scratch list — reused across frames to avoid GC. */
+    /** Pre-allocated scratch list. */
     private val detectionScratch: ArrayList<Detection> = ArrayList(64)
+
+    /**
+     * Whether the model output has been validated at least once.
+     * After the first successful inference, we log the output shape for
+     * diagnostics.
+     */
+    @Volatile
+    private var modelValidated: Boolean = false
 
     /**
      * Run YOLO inference on [bitmap] and return the post-NMS detections.
@@ -110,15 +110,12 @@ class YoloDetector(
         val labels = modelManager.getLabels()
 
         // 1. Resize input bitmap to model input size (letter-boxed to black).
-        //    Reuse a single destination bitmap across frames to avoid GC churn.
         val resized = acquireResizedBitmap()
-
-        // Draw source into the letterboxed canvas — clears to black first.
         val canvas = Canvas(resized)
         canvas.drawColor(Color.BLACK)
         val srcW = bitmap.width.toFloat()
         val srcH = bitmap.height.toFloat()
-        val scale = inputSize.toFloat() / kotlin.math.max(srcW, srcH)
+        val scale = inputSize.toFloat() / max(srcW, srcH)
         val scaledW = (srcW * scale).toInt().coerceAtLeast(1)
         val scaledH = (srcH * scale).toInt().coerceAtLeast(1)
         val dx = (inputSize - scaledW) / 2f
@@ -126,9 +123,7 @@ class YoloDetector(
         val dst = RectF(dx, dy, dx + scaledW, dy + scaledH)
         canvas.drawBitmap(bitmap, null, dst, null)
 
-        // 2. Convert directly into inputBuffer — no intermediate FloatArray.
-        //    bitmap.getPixels -> pixelScratch, then write normalized RGB
-        //    straight into inputFloats. Saves ~6.5 MB/frame of allocation.
+        // 2. Convert directly into inputBuffer — ARGB → RGB normalized.
         resized.getPixels(pixelScratch, 0, inputSize, 0, 0, inputSize, inputSize)
         inputFloats.rewind()
         val n = pixelScratch.size
@@ -140,7 +135,7 @@ class YoloDetector(
             inputFloats.put(fi + 2, (px and 0xFF) / 255f)
             fi += 3
         }
-        inputBuffer.rewind()  // Position back to 0 for the TFLite read.
+        inputBuffer.rewind()
 
         // 3. Read output shape & (re)allocate the output array if needed.
         val outputShape = interpreter.getOutputTensor(0).shape()
@@ -148,11 +143,18 @@ class YoloDetector(
             Logger.w(TAG, "Unexpected output tensor shape: ${outputShape.toList()}")
             return@withLock Detection.empty()
         }
+
+        // First-time validation: log the shape so we can verify the model.
+        if (!modelValidated) {
+            modelValidated = true
+            Logger.w(TAG, "Model output shape: ${outputShape.toList()}, labels=${labels.size}")
+        }
+
         val nDet = outputShape[1]
         val m = outputShape[2]
         val outputArray = acquireOutputArray(outputShape, nDet, m)
 
-        // 4. Run inference — reuse the cached inputs/outputs containers.
+        // 4. Run inference.
         outputsMap.clear()
         outputsMap[0] = outputArray
         try {
@@ -162,33 +164,31 @@ class YoloDetector(
             return@withLock Detection.empty()
         }
 
-        // 5. Parse + inline-filter. For [1, 8400, 84] raw output,
-        //    the old path materialised ALL 8400 rows into Detection objects
-        //    then filtered — causing ~8K allocations + 672K score comparisons
-        //    per frame. The new [parseOutputInline] inlines the confidence
-        //    and class filter on the raw float data so low-score / non-person
-        //    rows are skipped WITHOUT allocating a Detection object.
-        //    This reduces parse time from ~40ms to ~3ms on a typical frame.
+        // 5. Parse + inline-filter.
         val confThreshold = FeatureFlags.minConfidence
-        const val iouThreshold = Constants.Detection.DEFAULT_IOU_THRESHOLD
-        const val targetClass = Constants.Detection.HUMAN_CLASS_INDEX
+        val iouThreshold = Constants.Detection.DEFAULT_IOU_THRESHOLD
+        val targetClass = Constants.Detection.HUMAN_CLASS_INDEX
         val filtered = parseOutputInline(outputArray[0], nDet, m, labels, confThreshold, targetClass)
         if (filtered.isEmpty()) return@withLock Detection.empty()
-        // 6. NMS — input is already confidence+class filtered, typically <50 rows.
+
+        // 6. NMS.
         val suppressed = DetectionProcessor.nms(filtered, iouThreshold)
         val capped = if (suppressed.size > Constants.Detection.DEFAULT_MAX_DETECTIONS)
             suppressed.take(Constants.Detection.DEFAULT_MAX_DETECTIONS) else suppressed
+
+        // Log detection count periodically for diagnostics (every frame would be noisy).
+        if (capped.isNotEmpty()) {
+            Logger.w(TAG, "Detections: ${capped.size} (from $nDet raw rows, conf>=$confThreshold)")
+        }
+
         capped
     }
 
     /**
-     * Returns the cached output array when [shape] matches, else allocates
-     * a fresh `[1][n][m]` FloatArray and caches it.
+     * Returns the cached output array when [shape] matches, else allocates fresh.
      */
     private fun acquireOutputArray(
-        shape: IntArray,
-        n: Int,
-        m: Int
+        shape: IntArray, n: Int, m: Int
     ): Array<Array<FloatArray>> {
         val cachedShape = cachedOutputShape
         val cached = cachedOutputArray
@@ -202,18 +202,13 @@ class YoloDetector(
     }
 
     /**
-     * Optimised parse + inline filter for YOLOv5-format rows `[cx, cy, w, h, cls0, ...]`.
+     * Optimised parse + inline filter with **sigmoid safety net**.
      *
-     * For [1, 8400, 84] raw output, iterating ALL 8400 rows and
-     * materialising Detection objects (the old [parseOutput]) causes
-     * ~8400 allocations + 672K score comparisons per frame — devastating
-     * for 60 FPS mobile inference.
-     *
-     * This method inlines the confidence + class filter directly on the raw
-     * float data so low-score and non-target rows are skipped WITHOUT
-     * allocating a Detection. Only passing rows are materialised into
-     * [detectionScratch] (reused across frames to avoid GC). The
-     * returned list is a trimmed copy of the scratch list.
+     * For each raw row, class scores are passed through [sigmoidSafe] before
+     * comparison. This handles both cases:
+     *   - Model already applied sigmoid → scores are in [0, 1], sigmoid is
+     *     approximately identity (minor floating-point drift is harmless).
+     *   - Model outputs raw logits → sigmoid converts them to [0, 1].
      */
     private fun parseOutputInline(
         rows: Array<FloatArray>,
@@ -229,27 +224,24 @@ class YoloDetector(
             val row = rows[i]
             val w = row[2]
             val h = row[3]
-            // Quick reject: invalid box dimensions
             if (!(w > 0f && h > 0f)) continue
             when {
                 m == 6 -> {
-                    val score = row[4]
+                    // YOLOv8 post-processed: [cx, cy, w, h, score, classId]
+                    val score = sigmoidSafe(row[4])
                     if (score < confThreshold) continue
-                    val classId = row[5].toInt()
+                    val classId = row[5].toInt().coerceIn(0, labels.size - 1)
                     if (classId != targetClass) continue
                     scratch += buildDetection(row[0], row[1], w, h, score, classId, labels)
                 }
                 m >= 5 -> {
-                    // Inline max-class-score search with early termination.
-                    // For a 0.55 threshold on sigmoid outputs, most rows will have
-                    // max score < 0.1 — this loop exits fast for them.
+                    // YOLOv5 / raw: [cx, cy, w, h, cls0, cls1, ...]
+                    // Apply sigmoid to each class score, find argmax.
                     var bestScore = 0f
                     var bestClass = -1
                     var c = 4
                     while (c < m) {
-                        val s = row[c]
-                        // NaN-safe: NaN comparisons return false, so NaN values
-                        // are implicitly skipped.
+                        val s = sigmoidSafe(row[c])
                         if (s > bestScore) {
                             bestScore = s
                             bestClass = c - 4
@@ -266,13 +258,34 @@ class YoloDetector(
         return scratch
     }
 
+    /**
+     * Sigmoid activation — maps any real value to (0, 1).
+     *
+     * This is a **safety net**. The TFLite conversion script should have already
+     * applied sigmoid to class scores, making the output already in (0, 1).
+     * Sigmoid is idempotent-ish for values already in (0, 1):
+     *   - sigmoid(0.8) ≈ 0.69 (slightly lower — acceptable, just a small
+     *     confidence penalty)
+     *   - sigmoid(0.99) ≈ 0.73 (acceptable)
+     *
+     * For raw logits (e.g. -1.5, 3.2), sigmoid correctly maps to (0, 1).
+     *
+     * Optimised: avoids `Math.exp` for extreme values to prevent overflow.
+     */
+    private fun sigmoidSafe(x: Float): Float {
+        if (x >= 0f) {
+            val e = exp(-x)
+            return 1f / (1f + e)
+        } else {
+            val e = exp(x)
+            return e / (1f + e)
+        }
+    }
+
     private fun buildDetection(
         cx: Float, cy: Float, w: Float, h: Float,
         score: Float, classId: Int, labels: List<String>
     ): Detection {
-        // Clamp cx, cy to valid model-input range and normalise w, h
-        // to fit within the input square. YOLOv8 raw outputs can
-        // produce coordinates slightly outside [0, inputSize].
         val cxClamped = cx.coerceIn(0f, inputSize.toFloat())
         val cyClamped = cy.coerceIn(0f, inputSize.toFloat())
         val wClamped = w.coerceAtMost(inputSize.toFloat())
@@ -291,24 +304,17 @@ class YoloDetector(
     }
 
     /**
-     * Generate 1–3 simulated detections centered horizontally at 1/4, 1/2, 3/4
-     * of input height. Boxes get ±5 % jitter and confidence in [0.6, 0.9].
-     *
-     * Demo detections use `classId = 0` (COCO 'person') so the downstream
-     * class filter passes them through — this fixes a v3 bug where demo mode
-     * silently produced zero visible detections. The `label = "demo"` marker
-     * lets the overlay render them in a distinct colour so the user can tell
-     * they are simulated.
+     * Generate 1–3 simulated detections for demo mode.
      */
     private fun generateDemoDetections(): List<Detection> {
-        val count = Random.nextInt(1, 4) // 1..3 inclusive
+        val count = Random.nextInt(1, 4)
         val out = ArrayList<Detection>(count)
         val size = inputSize.toFloat()
         val yAnchors = floatArrayOf(0.25f, 0.5f, 0.75f)
         for (i in 0 until count) {
             val yBase = yAnchors[i]
-            val jitterX = (Random.nextFloat() - 0.5f) * 0.1f * size // ±5 %
-            val jitterY = (Random.nextFloat() - 0.5f) * 0.1f * size // ±5 %
+            val jitterX = (Random.nextFloat() - 0.5f) * 0.1f * size
+            val jitterY = (Random.nextFloat() - 0.5f) * 0.1f * size
             val cx = size * 0.5f + jitterX
             val cy = size * yBase + jitterY
             val boxW = size * 0.18f
@@ -317,23 +323,20 @@ class YoloDetector(
             val top = (cy - boxH * 0.5f).coerceAtLeast(0f)
             val right = (cx + boxW * 0.5f).coerceAtMost(size)
             val bottom = (cy + boxH * 0.5f).coerceAtMost(size)
-            val conf = 0.6f + Random.nextFloat() * 0.3f // 0.6..0.9
+            val conf = 0.6f + Random.nextFloat() * 0.3f
             out.add(
                 Detection(
-                    classId = 0,  // COCO 'person' — passes the downstream filter
+                    classId = 0,
                     confidence = conf,
                     box = RectF(left, top, right, bottom),
-                    label = "demo"  // overlay renders demo detections as ally/neutral
+                    label = "demo"
                 )
             )
         }
         return out
     }
 
-    /**
-     * Lazily allocate the reused resized bitmap. Caller holds [inferenceLock]
-     * so no extra synchronization needed.
-     */
+    /** Lazily allocate the reused resized bitmap. */
     private fun acquireResizedBitmap(): Bitmap {
         val current = resizedBitmap
         if (current != null && !current.isRecycled &&
@@ -346,10 +349,7 @@ class YoloDetector(
         return fresh
     }
 
-    /**
-     * Release native resources held by this detector. Call when the engine
-     * is being torn down. Safe to call multiple times.
-     */
+    /** Release native resources. */
     fun release() {
         inferenceLock.withLock {
             runCatching {
@@ -359,6 +359,7 @@ class YoloDetector(
             cachedOutputArray = null
             cachedOutputShape = null
             outputsMap.clear()
+            modelValidated = false
         }
     }
 

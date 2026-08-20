@@ -64,7 +64,7 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: AimbotPro-v4.0.0-release-signed
+          name: AimbotPro-v4.1.0-release-signed
           path: ${{ env.APK }}
           retention-days: 7
           if-no-files-found: error
