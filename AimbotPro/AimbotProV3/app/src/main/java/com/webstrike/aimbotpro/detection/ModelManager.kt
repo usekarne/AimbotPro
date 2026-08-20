@@ -4,7 +4,6 @@ import android.content.Context
 import com.webstrike.aimbotpro.Constants
 import com.webstrike.aimbotpro.utils.Logger
 import org.tensorflow.lite.Interpreter
-import org.tensorflow.lite.gpu.CompatibilityList
 import org.tensorflow.lite.gpu.GpuDelegate
 import java.io.FileInputStream
 import java.nio.MappedByteBuffer
@@ -20,12 +19,10 @@ import kotlin.concurrent.withLock
  * loaded, the manager enters **demo mode**: [getInterpreter] returns `null`
  * and [isDemoMode] returns `true`.
  *
- * ## GPU acceleration (v4.1 fix)
- * Uses [CompatibilityList] to check device compatibility BEFORE attempting
- * to create a [GpuDelegate]. On incompatible devices, falls back directly to
- * a 4-thread CPU interpreter. This avoids the silent-failure pattern where
- * the old no-arg GpuDelegate() constructor would create a delegate that
- * then fails during the first inference call.
+ * ## GPU acceleration
+ * Tries the no-arg [GpuDelegate] constructor first. If it throws,
+ * falls back to a 4-thread CPU interpreter. This is the most portable
+ * approach across TFLite 2.14.x device variants.
  */
 object ModelManager {
 
@@ -90,30 +87,20 @@ object ModelManager {
 
         Logger.w(TAG, "Model asset loaded: ${modelBuffer.capacity()} bytes")
 
-        // Try GPU delegate on compatible devices.
-        val gpuDelegate: GpuDelegate? = try {
-            val compatList = CompatibilityList()
-            if (compatList.isDelegateSupportedOnThisDevice) {
-                val options = compatList.bestOptionsForThisDevice
-                val delegate = GpuDelegate(options)
-                Logger.w(TAG, "GPU delegate created (bestOptions)")
-                delegate
-            } else {
-                Logger.w(TAG, "GPU not supported — using CPU")
-                null
-            }
+        // Try GPU delegate — if construction fails, fall back to CPU.
+        var gpuDelegate: GpuDelegate? = null
+        val options: Interpreter.Options = try {
+            val delegate = GpuDelegate()
+            gpuDelegate = delegate
+            Logger.w(TAG, "GPU delegate created")
+            Interpreter.Options()
+                .addDelegate(delegate)
+                .setNumThreads(1)
         } catch (t: Throwable) {
             Logger.w(TAG, "GPU delegate failed: ${t.message}")
-            null
-        }
-
-        val options: Interpreter.Options = Interpreter.Options().apply {
-            if (gpuDelegate != null) {
-                addDelegate(gpuDelegate)
-                setNumThreads(1)
-            } else {
-                setNumThreads(4)
-            }
+            runCatching { gpuDelegate?.close() }
+            gpuDelegate = null
+            Interpreter.Options().setNumThreads(4)
         }
 
         return try {
