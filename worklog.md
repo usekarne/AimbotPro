@@ -48,3 +48,31 @@ Stage Summary:
 - v4.1.0 APK: /home/z/my-project/download/AimbotPro-v4.1.0-release-signed.apk (25 MB)
 - CI run: https://github.com/usekarne/AimbotPro/actions/runs/32332747364 (success)
 - Key fixes: ProGuard repackageclasses removal, sigmoid safety net, GPU compat, Logger direct Log.w/e
+
+---
+Task ID: 3
+Agent: Super Z (main)
+Task: v5.0.0 — Fix critical sigmoid double-application + Headshot Priority + Recoil Control
+
+Work Log:
+- Full re-audit of all 22+ source files to diagnose why app installs but nothing works
+- **CRITICAL BUG FOUND**: YoloDetector.parseOutputInline() applied sigmoid() to class scores that were ALREADY sigmoid-activated by the TFLite conversion pipeline. sigmoid(0.8)=0.69, sigmoid(0.95)=0.73 — destroyed all real detections below 0.55 threshold
+- **FIX**: Removed double-sigmoid. Now reads scores directly with coerceIn(0f, 1f) for float16 safety
+- Rewrote AimCalculator.kt: Headshot mode targets top 12% of bbox (head region), instant snap within 80px, 3x faster delta cap (120px vs 40px)
+- Rewrote TargetSelector.kt: Head-aware scoring (60% head proximity + 30% confidence + 10% body proximity)
+- New: RecoilController.kt — automatic downward camera pull during trigger bot fire, 30Hz compensation loop
+- Rewrote TriggerBot.kt: Tighter fire zone in headshot mode (15% vs 30%), 50% reduced delay
+- Rewrote AimSmoother.kt: Jitter disabled in headshot mode, 70% reduced smoothing for fast convergence
+- Lowered default confidence threshold: 0.55 → 0.35
+- Increased default aim speed: 0.65 → 0.85
+- Reduced default trigger delay: 80ms → 50ms
+- Enabled headshot, trigger, recoil by default
+- Version bumped to 5.0.0 (versionCode 6)
+- Committed and pushed to GitHub for CI/CD build
+
+Stage Summary:
+- Root cause of app not working: double-sigmoid destroying all real YOLO detections
+- v5.0.0 committed as e115bdd, pushed to main
+- CI/CD triggered automatically via GitHub Actions
+- New features: Headshot Priority, One-Tap Headshot, Recoil Control, Scrolling compensation
+- APK will be available at GitHub Actions artifacts when build completes
