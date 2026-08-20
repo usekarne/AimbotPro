@@ -26,3 +26,25 @@ Stage Summary:
 - Env var bridge: set AIMBOT_KEYSTORE_FILE/PASSWORD/ALIAS/KEY_PASSWORD → auto-signs release
 - Build: `export AIMBOT_KEYSTORE_FILE=keystore/release.jks AIMBOT_KEYSTORE_PASSWORD=aimbotpro2024 AIMBOT_KEY_ALIAS=aimbotpro AIMBOT_KEY_PASSWORD=aimbotpro2024 && bash build_apk.sh release`
 - Note: Android SDK not present in this env — build must run on machine with SDK
+
+---
+Task ID: 2
+Agent: Super Z (main)
+Task: Full app audit + v4.1.0 overhaul — fix completely broken APK
+
+Work Log:
+- Read ALL 22 Kotlin source files, 4 layouts, AndroidManifest.xml, build.gradle, proguard-rules.pro
+- Identified 7 root causes for app dysfunction
+- Fixed proguard-rules.pro: removed -repackageclasses '', added comprehensive keep for com.webstrike.aimbotpro.**
+- Fixed YoloDetector.kt: added sigmoidSafe() to every class score for raw-logit safety
+- Fixed ModelManager.kt: simplified GPU delegate to TFLite 2.14-compatible no-arg constructor
+- Fixed Logger.kt: w/e now route directly to android.util.Log (bypasses Timber optimization)
+- Fixed build.gradle: version 4.1.0, removed duplicate packagingOptions and lint blocks
+- Fixed .github/workflows/build-release.yml: moved to repo root, added working-directory, fixed paths
+- Bumped version to 4.1.0 (versionCode 5)
+- Pushed to GitHub, triggered CI, built signed APK successfully
+
+Stage Summary:
+- v4.1.0 APK: /home/z/my-project/download/AimbotPro-v4.1.0-release-signed.apk (25 MB)
+- CI run: https://github.com/usekarne/AimbotPro/actions/runs/32332747364 (success)
+- Key fixes: ProGuard repackageclasses removal, sigmoid safety net, GPU compat, Logger direct Log.w/e
