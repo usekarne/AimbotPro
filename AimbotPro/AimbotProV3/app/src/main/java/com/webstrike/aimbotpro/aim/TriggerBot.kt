@@ -9,121 +9,84 @@ import com.webstrike.aimbotpro.utils.Logger
 /**
  * Auto-fire controller. Fires the configured in-game weapon whenever a
  * target is sufficiently close to the crosshair and enough time has
- * elapsed since the last shot (debounce via [FeatureFlags.triggerDelayMs]).
+ * elapsed since the last shot.
  *
- * The fire dispatch itself is delegated to [TouchSimulator.triggerFire],
- * which posts a tap on the configured fire button to the background
- * Handler. This class therefore never blocks the inference coroutine.
- *
- * Fire geometry:
- *   - The target's centre must be within `fovRadiusPx * 0.3` of
- *     [screenCenter] (i.e. roughly inside the central third of the FOV
- *     circle) — this prevents the trigger bot from spraying at distant
- *     edge-of-screen detections where the aim hasn't fully converged.
- *
- * Debounce:
- *   - [FeatureFlags.triggerDelayMs] between consecutive fires. The first
- *     fire after [reset] (or after the service boots) is always allowed
- *     (subject to the geometry check).
- *
- * NaN safety: a target with non-finite centre coordinates is treated as
- * "out of range" — no fire, no crash.
- *
- * @param touchSimulator the per-session touch helper.
+ * ## Headshot Mode Integration (v5)
+ * In headshot mode, the fire zone is MUCH tighter (15% of FOV instead of 30%)
+ * and the minimum delay is reduced. Combined with the AimCalculator's
+ * instant-snap behavior, this delivers the "one-tap headshot" experience:
+ * as soon as a target enters the aim zone and the crosshair is near the head,
+ * the bot fires immediately.
  */
 class TriggerBot(private val touchSimulator: TouchSimulator) {
 
     private val logTag = "TriggerBot"
 
-    /**
-     * Last wall-clock fire time in ms (System.currentTimeMillis). Zero
-     * sentinel means "never fired this session" — first call always passes
-     * the debounce check.
-     */
     @Volatile var lastFireTimeMs: Long = 0L
         private set
 
-    /**
-     * Possibly fire on [target].
-     *
-     * @param target       the chosen detection (may be `null` → no fire).
-     * @param fovRadiusPx  FOV circle radius in screen pixels — used to
-     *                      derive the inner "fire zone" radius.
-     * @param screenCenter crosshair position in screen pixels.
-     * @return `true` if a fire was dispatched this call; `false` otherwise
-     *         (feature off, no target, too far off-centre, debounce, etc.).
-     */
     fun maybeFire(target: Detection?, fovRadiusPx: Float, screenCenter: PointF): Boolean {
-        // ----- Feature gate -----
         if (!FeatureFlags.triggerBotEnabled) return false
-
-        // ----- No target? -----
         if (target == null) return false
 
-        // ----- Sanitise geometry inputs -----
-        if (!screenCenter.x.isFinite() || !screenCenter.y.isFinite()) {
-            Logger.w(logTag, "maybeFire: non-finite screenCenter ($screenCenter)")
-            return false
-        }
-        if (!fovRadiusPx.isFinite() || fovRadiusPx <= 0f) {
-            Logger.w(logTag, "maybeFire: invalid fovRadiusPx=$fovRadiusPx")
-            return false
-        }
+        if (!screenCenter.x.isFinite() || !screenCenter.y.isFinite()) return false
+        if (!fovRadiusPx.isFinite() || fovRadiusPx <= 0f) return false
 
-        // ----- Compute target centre -----
         val cx = target.centerX()
         val cy = target.centerY()
-        if (!cx.isFinite() || !cy.isFinite()) {
-            Logger.w(logTag, "maybeFire: non-finite target center ($cx,$cy)")
-            return false
-        }
+        if (!cx.isFinite() || !cy.isFinite()) return false
 
-        // ----- Distance from crosshair -----
         val dx = cx - screenCenter.x
         val dy = cy - screenCenter.y
         val distance = Math.hypot(dx.toDouble(), dy.toDouble()).toFloat()
-        if (!distance.isFinite()) {
-            Logger.w(logTag, "maybeFire: non-finite distance")
-            return false
+        if (!distance.isFinite()) return false
+
+        // In headshot mode, check HEAD proximity (top of box) for fire decision
+        val headshotMode = FeatureFlags.headshotModeEnabled
+        val effectiveDistance = if (headshotMode) {
+            // Use head region distance instead of body center
+            val headY = target.box.top + target.box.height() * 0.12f
+            val headDx = cx - screenCenter.x
+            val headDy = headY - screenCenter.y
+            Math.hypot(headDx.toDouble(), headDy.toDouble()).toFloat()
+        } else {
+            distance
         }
 
-        // ----- Inside fire zone? -----
-        // Inner radius = 30% of the FOV circle — prevents firing at distant
-        // edge-of-screen detections where the aim hasn't yet converged.
-        val fireZoneRadius = fovRadiusPx * 0.3f
-        if (distance > fireZoneRadius) {
-            return false
-        }
+        if (!effectiveDistance.isFinite()) return false
 
-        // ----- Debounce -----
-        // Use SystemClock.elapsedRealtimeNanos (monotonic) — wall-clock
-        // (System.currentTimeMillis) can jump backwards if the user changes
-        // system time, which would silently break the debounce for one cycle.
+        // Fire zone: tighter in headshot mode (15% vs 30%)
+        val fireFraction = if (headshotMode) HEADSHOT_FIRE_ZONE_FRACTION else NORMAL_FIRE_ZONE_FRACTION
+        val fireZoneRadius = fovRadiusPx * fireFraction
+        if (effectiveDistance > fireZoneRadius) return false
+
+        // Debounce — shorter in headshot mode for rapid fire
         val nowMs = android.os.SystemClock.elapsedRealtimeNanos() / 1_000_000L
-        val delay = FeatureFlags.triggerDelayMs
-        val effectiveDelay = if (delay > 0L) delay else 0L
+        val delay = if (headshotMode) {
+            (FeatureFlags.triggerDelayMs * 0.5f).toLong().coerceAtLeast(30L)
+        } else {
+            FeatureFlags.triggerDelayMs
+        }
 
         if (lastFireTimeMs != 0L) {
             val elapsed = nowMs - lastFireTimeMs
-            // elapsed can't go negative on a monotonic clock — drop the
-            // clock-skew check (kept the >= 0 guard defensively anyway).
-            if (elapsed >= 0L && elapsed < effectiveDelay) {
-                return false
-            }
+            if (elapsed >= 0L && elapsed < delay) return false
         }
 
-        // ----- Fire -----
         lastFireTimeMs = nowMs
         touchSimulator.triggerFire()
         return true
     }
 
-    /**
-     * Clear state. Call when the aim pipeline is reset (e.g. target lost,
-     * aimbot toggled off, service stopped) so the next fire isn't held off
-     * by a stale debounce window.
-     */
     fun reset() {
         lastFireTimeMs = 0L
+    }
+
+    companion object {
+        /** Normal fire zone = 30% of FOV circle radius. */
+        private const val NORMAL_FIRE_ZONE_FRACTION = 0.3f
+
+        /** Headshot fire zone = 15% of FOV (tighter for precise headshots). */
+        private const val HEADSHOT_FIRE_ZONE_FRACTION = 0.15f
     }
 }

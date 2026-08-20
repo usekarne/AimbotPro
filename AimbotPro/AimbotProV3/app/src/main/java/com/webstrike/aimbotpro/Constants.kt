@@ -36,7 +36,7 @@ object Constants {
         const val DEFAULT_MODEL_NAME = "yolov8n.tflite"
         const val DEFAULT_LABELS_NAME = "coco_labels.txt"
         const val INPUT_SIZE = 640
-        const val DEFAULT_CONF_THRESHOLD = 0.55f
+        const val DEFAULT_CONF_THRESHOLD = 0.35f
         const val DEFAULT_IOU_THRESHOLD = 0.45f
         const val DEFAULT_MAX_DETECTIONS = 50
         const val HUMAN_CLASS_INDEX = 0  // COCO 'person'
@@ -44,9 +44,9 @@ object Constants {
 
     object Aim {
         const val DEFAULT_FOV_RADIUS_DP = 180f
-        const val DEFAULT_AIM_SPEED = 0.65f     // 0..1, higher = snappier
-        const val DEFAULT_SMOOTHNESS = 0.45f     // 0..1, higher = more smoothing
-        const val DEFAULT_TRIGGER_DELAY_MS = 80L
+        const val DEFAULT_AIM_SPEED = 0.85f     // 0..1, higher = snappier
+        const val DEFAULT_SMOOTHNESS = 0.3f      // 0..1, higher = more smoothing
+        const val DEFAULT_TRIGGER_DELAY_MS = 50L
         const val HEADSHOT_BIAS = 0.18f          // upward bias for headshot mode
     }
 

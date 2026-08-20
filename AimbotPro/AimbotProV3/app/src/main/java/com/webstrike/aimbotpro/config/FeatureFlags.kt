@@ -13,11 +13,11 @@ object FeatureFlags {
 
     // ---- Toggleable features ----
     @Volatile var aimbotEnabled: Boolean = true
-    @Volatile var triggerBotEnabled: Boolean = false
-    @Volatile var recoilControlEnabled: Boolean = false
-    @Volatile var aimSmoothEnabled: Boolean = true
+    @Volatile var triggerBotEnabled: Boolean = true
+    @Volatile var recoilControlEnabled: Boolean = true
+    @Volatile var aimSmoothEnabled: Boolean = false
     @Volatile var silentAimEnabled: Boolean = false
-    @Volatile var headshotModeEnabled: Boolean = false
+    @Volatile var headshotModeEnabled: Boolean = true
 
     @Volatile var espBoxesEnabled: Boolean = true
     @Volatile var espLinesEnabled: Boolean = false
@@ -41,11 +41,11 @@ object FeatureFlags {
 
     fun init(settings: SettingsManager) {
         aimbotEnabled = settings.getBool(Keys.AIMBOT, true)
-        triggerBotEnabled = settings.getBool(Keys.TRIGGER, false)
-        recoilControlEnabled = settings.getBool(Keys.RECOIL, false)
-        aimSmoothEnabled = settings.getBool(Keys.SMOOTH, true)
+        triggerBotEnabled = settings.getBool(Keys.TRIGGER, true)
+        recoilControlEnabled = settings.getBool(Keys.RECOIL, true)
+        aimSmoothEnabled = settings.getBool(Keys.SMOOTH, false)
         silentAimEnabled = settings.getBool(Keys.SILENT, false)
-        headshotModeEnabled = settings.getBool(Keys.HEADSHOT, false)
+        headshotModeEnabled = settings.getBool(Keys.HEADSHOT, true)
 
         espBoxesEnabled = settings.getBool(Keys.ESP_BOXES, true)
         espLinesEnabled = settings.getBool(Keys.ESP_LINES, false)

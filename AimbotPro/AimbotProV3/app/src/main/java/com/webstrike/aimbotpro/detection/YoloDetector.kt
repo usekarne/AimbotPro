@@ -12,9 +12,6 @@ import java.nio.ByteOrder
 import java.nio.FloatBuffer
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
-import kotlin.math.exp
-import kotlin.math.max
-import kotlin.random.Random
 
 /**
  * Synchronous YOLO inference wrapper.
@@ -202,13 +199,15 @@ class YoloDetector(
     }
 
     /**
-     * Optimised parse + inline filter with **sigmoid safety net**.
+     * Optimised parse + inline filter.
      *
-     * For each raw row, class scores are passed through [sigmoidSafe] before
-     * comparison. This handles both cases:
-     *   - Model already applied sigmoid → scores are in [0, 1], sigmoid is
-     *     approximately identity (minor floating-point drift is harmless).
-     *   - Model outputs raw logits → sigmoid converts them to [0, 1].
+     * Our TFLite conversion pipeline (convert_yolov8n_to_tflite.py) already
+     * applies sigmoid to class scores before export. The model output is
+     * [1, 8400, 84] where columns 4..83 are sigmoid-activated class scores
+     * in [0, 1]. We read them DIRECTLY — no second sigmoid.
+     *
+     * For robustness, we still clamp values to [0, 1] in case of minor
+     * float16 quantization drift (values might be e.g. 1.003 or -0.001).
      */
     private fun parseOutputInline(
         rows: Array<FloatArray>,
@@ -228,7 +227,7 @@ class YoloDetector(
             when {
                 m == 6 -> {
                     // YOLOv8 post-processed: [cx, cy, w, h, score, classId]
-                    val score = sigmoidSafe(row[4])
+                    val score = row[4].coerceIn(0f, 1f)
                     if (score < confThreshold) continue
                     val classId = row[5].toInt().coerceIn(0, labels.size - 1)
                     if (classId != targetClass) continue
@@ -236,12 +235,13 @@ class YoloDetector(
                 }
                 m >= 5 -> {
                     // YOLOv5 / raw: [cx, cy, w, h, cls0, cls1, ...]
-                    // Apply sigmoid to each class score, find argmax.
+                    // Scores are already sigmoid-activated by our conversion pipeline.
+                    // Just clamp to [0,1] for float16 safety and find argmax.
                     var bestScore = 0f
                     var bestClass = -1
                     var c = 4
                     while (c < m) {
-                        val s = sigmoidSafe(row[c])
+                        val s = row[c].coerceIn(0f, 1f)
                         if (s > bestScore) {
                             bestScore = s
                             bestClass = c - 4
@@ -256,30 +256,6 @@ class YoloDetector(
             }
         }
         return scratch
-    }
-
-    /**
-     * Sigmoid activation — maps any real value to (0, 1).
-     *
-     * This is a **safety net**. The TFLite conversion script should have already
-     * applied sigmoid to class scores, making the output already in (0, 1).
-     * Sigmoid is idempotent-ish for values already in (0, 1):
-     *   - sigmoid(0.8) ≈ 0.69 (slightly lower — acceptable, just a small
-     *     confidence penalty)
-     *   - sigmoid(0.99) ≈ 0.73 (acceptable)
-     *
-     * For raw logits (e.g. -1.5, 3.2), sigmoid correctly maps to (0, 1).
-     *
-     * Optimised: avoids `Math.exp` for extreme values to prevent overflow.
-     */
-    private fun sigmoidSafe(x: Float): Float {
-        if (x >= 0f) {
-            val e = exp(-x)
-            return 1f / (1f + e)
-        } else {
-            val e = exp(x)
-            return e / (1f + e)
-        }
     }
 
     private fun buildDetection(
@@ -307,14 +283,14 @@ class YoloDetector(
      * Generate 1–3 simulated detections for demo mode.
      */
     private fun generateDemoDetections(): List<Detection> {
-        val count = Random.nextInt(1, 4)
+        val count = (1..3).random()
         val out = ArrayList<Detection>(count)
         val size = inputSize.toFloat()
         val yAnchors = floatArrayOf(0.25f, 0.5f, 0.75f)
         for (i in 0 until count) {
             val yBase = yAnchors[i]
-            val jitterX = (Random.nextFloat() - 0.5f) * 0.1f * size
-            val jitterY = (Random.nextFloat() - 0.5f) * 0.1f * size
+            val jitterX = ((-5..5).random() * 0.01f * size)
+            val jitterY = ((-5..5).random() * 0.01f * size)
             val cx = size * 0.5f + jitterX
             val cy = size * yBase + jitterY
             val boxW = size * 0.18f
@@ -323,7 +299,7 @@ class YoloDetector(
             val top = (cy - boxH * 0.5f).coerceAtLeast(0f)
             val right = (cx + boxW * 0.5f).coerceAtMost(size)
             val bottom = (cy + boxH * 0.5f).coerceAtMost(size)
-            val conf = 0.6f + Random.nextFloat() * 0.3f
+            val conf = 0.6f + (1..10).random() * 0.03f
             out.add(
                 Detection(
                     classId = 0,

@@ -7,46 +7,20 @@ import com.webstrike.aimbotpro.utils.Logger
 /**
  * Picks the "best" detection from a frame's batch to aim at.
  *
- * Pure function — no internal state, no side effects. Caller (the engine)
- * invokes [select] once per inference frame with the screen-space detections
- * (i.e. Detection instances whose [Detection.box] has already been projected
- * to screen pixel coords — see [Detection.mapToScreen]) so the distance check
- * against [screenCenter] is meaningful.
+ * ## Headshot Priority Mode
+ * When enabled, scoring dramatically favours the detection whose **head
+ * region** (top 15% of box) is closest to the crosshair. This ensures the
+ * aimbot locks onto the nearest enemy's head, not just their body center.
  *
- * Scoring heuristic:
- *   - Confidence contributes 50% of the score (higher = better).
- *   - Proximity to screen centre contributes 50% (closer = better).
- *   - In headshot mode, taller boxes (i.e. head-like aspect) get a small
- *     bonus — `box.height / screenHeight * 0.2` — biasing selection toward
- *     headshots.
+ * ## Normal Mode
+ * 50% confidence + 50% proximity to screen centre.
  *
- * NaN safety: any detection whose centre or box is non-finite is skipped
- * silently — never crashes the aim pipeline on a corrupted detection.
- *
- * @see Detection.mapToScreen
+ * All geometry is in screen pixel coords (caller projects via Detection.mapToScreen).
  */
 class TargetSelector {
 
     private val logTag = "TargetSelector"
 
-    /**
-     * Select the best detection to aim at, or `null` if none is inside the
-     * FOV circle (or all candidates have non-finite geometry).
-     *
-     * @param detections    candidate detections; [Detection.box] should be in
-     *                       the same coordinate space as [screenCenter]
-     *                       (typically physical screen pixels).
-     * @param screenCenter  crosshair position in screen pixels.
-     * @param fovRadiusPx   FOV-circle radius in screen pixels; candidates
-     *                       whose centre is further than this from
-     *                       [screenCenter] are filtered out.
-     * @param headshotMode  when `true`, taller boxes get a score bonus.
-     * @param screenHeight  physical screen height in pixels — used to
-     *                       normalise the headshot bonus. Caller (Engine)
-     *                       passes the live [android.util.DisplayMetrics]
-     *                       height; passing 0 disables the bonus.
-     * @return the highest-scoring detection, or `null`.
-     */
     fun select(
         detections: List<Detection>,
         screenCenter: PointF,
@@ -54,7 +28,6 @@ class TargetSelector {
         headshotMode: Boolean,
         screenHeight: Float = screenCenter.y * 2f
     ): Detection? {
-        // Guard inputs — bad params mean "no target" rather than a crash.
         if (detections.isEmpty()) return null
         if (!screenCenter.x.isFinite() || !screenCenter.y.isFinite()) {
             Logger.w(logTag, "select: non-finite screenCenter ($screenCenter); aborting")
@@ -71,34 +44,56 @@ class TargetSelector {
         var bestScore = Float.NEGATIVE_INFINITY
 
         for (det in detections) {
-            val cx = det.centerX()
-            val cy = det.centerY()
-            if (!cx.isFinite() || !cy.isFinite()) {
-                Logger.w(logTag, "select: skipping non-finite center for $det")
-                continue
-            }
+            val box = det.box
+            val cx = (box.left + box.right) * 0.5f
+            val cy = (box.top + box.bottom) * 0.5f
+            if (!cx.isFinite() || !cy.isFinite()) continue
 
             val dx = cx - screenCenter.x
             val dy = cy - screenCenter.y
-            // hypot is NaN-safe (returns NaN only if BOTH inputs are NaN).
             val distance = hypotSafe(dx, dy)
             if (!distance.isFinite()) continue
 
-            // Filter: outside FOV circle → skip.
+            // FOV filter
             if (distance >= fovRadiusPx) continue
 
-            // Score: 50% confidence + 50% proximity (closer = higher).
             val confidence = det.confidence.coerceIn(0f, 1f)
             val proximity = 1f - (distance / fovRadiusPx).coerceIn(0f, 1f)
-            var score = confidence * 0.5f + proximity * 0.5f
 
-            // Headshot bonus: taller boxes (head region) get up to +0.2.
+            var score: Float
+
             if (headshotMode) {
-                val boxHeight = det.box.height()
-                if (boxHeight.isFinite() && boxHeight > 0f) {
-                    val bonus = (boxHeight / sh).coerceIn(0f, 1f) * 0.2f
-                    score += bonus
+                // HEADSHOT PRIORITY: Score based on head proximity.
+                // Head region = top 15% of the bounding box.
+                val boxHeight = box.height()
+                val headCenterX = cx
+                val headCenterY = if (boxHeight.isFinite() && boxHeight > 0f) {
+                    box.top + boxHeight * HEAD_REGION_FRACTION
+                } else {
+                    cy
                 }
+
+                val headDx = headCenterX - screenCenter.x
+                val headDy = headCenterY - screenCenter.y
+                val headDistance = hypotSafe(headDx, headDy)
+
+                if (headDistance.isFinite() && headDistance < fovRadiusPx) {
+                    val headProximity = 1f - (headDistance / fovRadiusPx).coerceIn(0f, 1f)
+                    // 60% head proximity + 30% confidence + 10% body proximity
+                    score = headProximity * 0.6f + confidence * 0.3f + proximity * 0.1f
+
+                    // Bonus for taller boxes (closer targets = bigger boxes = easier headshots)
+                    if (boxHeight.isFinite() && boxHeight > 0f) {
+                        val sizeBonus = (boxHeight / sh).coerceIn(0f, 1f) * 0.15f
+                        score += sizeBonus
+                    }
+                } else {
+                    // Head outside FOV — fall back to body center scoring with penalty
+                    score = confidence * 0.5f + proximity * 0.3f
+                }
+            } else {
+                // Normal mode: 50% confidence + 50% proximity
+                score = confidence * 0.5f + proximity * 0.5f
             }
 
             if (!score.isFinite()) continue
@@ -111,12 +106,16 @@ class TargetSelector {
         return best
     }
 
-    /** NaN-safe hypot — falls back to direct math if Math.hypot returns NaN. */
     private fun hypotSafe(dx: Float, dy: Float): Float {
         val r = Math.hypot(dx.toDouble(), dy.toDouble()).toFloat()
         return if (r.isFinite()) r else {
             val fallback = kotlin.math.sqrt(dx * dx + dy * dy)
             if (fallback.isFinite()) fallback else Float.POSITIVE_INFINITY
         }
+    }
+
+    companion object {
+        /** Head region: top 15% of bounding box. */
+        private const val HEAD_REGION_FRACTION = 0.15f
     }
 }

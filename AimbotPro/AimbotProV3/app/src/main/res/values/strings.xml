@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">AimbotPro</string>
-    <string name="app_version">v3.0.0</string>
+    <string name="app_version">v5.0.0</string>
 
     <!-- Notification -->
     <string name="notif_channel_id">aimbot_pro_channel</string>
@@ -15,8 +15,8 @@
     <string name="accessibility_service_desc">Synthetic gesture dispatch for aim assist in your own games.</string>
 
     <!-- Main activity -->
-    <string name="title_main">AimbotPro v3</string>
-    <string name="subtitle_main">Production AI Aimbot — OpenCV-free, TFLite YOLO</string>
+    <string name="title_main">AimbotPro v5</string>
+    <string name="subtitle_main">Headshot Priority AI Aimbot — YOLOv8 TFLite</string>
 
     <string name="btn_start">START AIMBOT</string>
     <string name="btn_stop">STOP AIMBOT</string>

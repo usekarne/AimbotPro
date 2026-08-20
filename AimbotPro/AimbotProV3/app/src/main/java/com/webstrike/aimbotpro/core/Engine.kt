@@ -8,6 +8,7 @@ import com.webstrike.aimbotpro.Constants
 import com.webstrike.aimbotpro.aim.AimCalculator
 import com.webstrike.aimbotpro.aim.AimSmoother
 import com.webstrike.aimbotpro.aim.TargetSelector
+import com.webstrike.aimbotpro.aim.RecoilController
 import com.webstrike.aimbotpro.aim.TriggerBot
 import com.webstrike.aimbotpro.capture.FrameBuffer
 import com.webstrike.aimbotpro.capture.ScreenCaptureManager
@@ -119,6 +120,7 @@ class Engine(
     private var smoother: AimSmoother? = null
     private var aimCalculator: AimCalculator? = null
     private var triggerBot: TriggerBot? = null
+    private var recoilController: RecoilController? = null
     private var touchHandler: Handler? = null
     private var touchSimulator: TouchSimulator? = null
 
@@ -187,6 +189,7 @@ class Engine(
                 targetSelector = TargetSelector()
                 aimCalculator = AimCalculator(inputInjector, sim, sm)
                 triggerBot = TriggerBot(sim)
+                recoilController = RecoilController(sim, handler)
             } catch (t: Throwable) {
                 Logger.e(TAG, "Collaborator construction failed: ${t.message}", t)
                 touchSimulator = null
@@ -352,6 +355,8 @@ class Engine(
             .onFailure { Logger.w(TAG, "aimCalculator.reset failed: ${it.message}") }
         runCatching { triggerBot?.reset() }
             .onFailure { Logger.w(TAG, "triggerBot.reset failed: ${it.message}") }
+        runCatching { recoilController?.release() }
+            .onFailure { Logger.w(TAG, "recoilController.release failed: ${it.message}") }
         runCatching { pipeline.reset() }
             .onFailure { Logger.w(TAG, "pipeline.reset failed: ${it.message}") }
 
@@ -369,6 +374,7 @@ class Engine(
         smoother = null
         aimCalculator = null
         triggerBot = null
+        recoilController = null
         touchSimulator = null
         touchHandler = null
         lastFrameTimeNs = 0L
@@ -517,6 +523,7 @@ class Engine(
 
             val injectStartNs = android.os.SystemClock.elapsedRealtimeNanos()
             val tb = triggerBot
+            val rc = recoilController
             if (tb != null) {
                 val fired = runCatching {
                     tb.maybeFire(targetScreen, fovRadiusPx, screenCenter)
@@ -524,7 +531,15 @@ class Engine(
                     Logger.w(TAG, "triggerBot.maybeFire failed: ${it.message}", it)
                 }.getOrDefault(false)
                 triggerDispatched = fired
+                // Notify recoil controller of fire event
+                if (fired && rc != null) {
+                    runCatching { rc.onTriggerFired() }
+                        .onFailure { Logger.w(TAG, "recoilController.onTriggerFired failed: ${it.message}") }
+                }
             }
+            // Tick recoil controller every frame
+            runCatching { rc?.tick() }
+                .onFailure { Logger.w(TAG, "recoilController.tick failed: ${it.message}") }
             injectNs = android.os.SystemClock.elapsedRealtimeNanos() - injectStartNs
         }
 
