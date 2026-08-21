@@ -12,7 +12,7 @@ android {
         minSdk 26
         targetSdk 34
         versionCode 7
-        versionName "6.0.0"
+        versionName "6.1.0"
 
         ndk {
             abiFilters 'arm64-v8a', 'armeabi-v7a', 'x86_64'
@@ -73,16 +73,18 @@ android {
         }
     }
 
-    // Optional release signing config — enabled only if the build machine
-    // has the AIMBOT_KEYSTORE_FILE property defined (in ~/.gradle/gradle.properties
-    // or via -P on the gradle command line). Otherwise the debug keystore is used.
-    if (findProperty('releaseKeystore') != null) {
+    // Release signing config — reads from environment variables set in CI
+    // (AIMBOT_KEYSTORE_FILE, AIMBOT_KEYSTORE_PASSWORD, etc.) or from
+    // gradle properties (-PreleaseKeystore=...). Falls back to debug if
+    // neither is available.
+    def ksFile = System.getenv('AIMBOT_KEYSTORE_FILE') ?: findProperty('releaseKeystore')
+    if (ksFile != null) {
         signingConfigs {
             release {
-                storeFile file(findProperty('releaseKeystore'))
-                storePassword findProperty('releaseKeystorePassword')
-                keyAlias findProperty('releaseKeyAlias')
-                keyPassword findProperty('releaseKeyPassword')
+                storeFile file(ksFile)
+                storePassword System.getenv('AIMBOT_KEYSTORE_PASSWORD') ?: findProperty('releaseKeystorePassword') ?: ''
+                keyAlias System.getenv('AIMBOT_KEY_ALIAS') ?: findProperty('releaseKeyAlias') ?: ''
+                keyPassword System.getenv('AIMBOT_KEY_PASSWORD') ?: findProperty('releaseKeyPassword') ?: ''
             }
         }
     }

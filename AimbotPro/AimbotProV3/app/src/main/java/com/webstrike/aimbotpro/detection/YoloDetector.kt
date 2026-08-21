@@ -112,7 +112,7 @@ class YoloDetector(
         canvas.drawColor(Color.BLACK)
         val srcW = bitmap.width.toFloat()
         val srcH = bitmap.height.toFloat()
-        val scale = inputSize.toFloat() / max(srcW, srcH)
+        val scale = inputSize.toFloat() / maxOf(srcW, srcH)
         val scaledW = (srcW * scale).toInt().coerceAtLeast(1)
         val scaledH = (srcH * scale).toInt().coerceAtLeast(1)
         val dx = (inputSize - scaledW) / 2f

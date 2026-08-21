@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+<?xml version="utf-8"?>
 <!-- Mod menu floating overlay layout -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/modMenuRoot"
@@ -51,7 +51,16 @@
             android:contentDescription="close"/>
     </LinearLayout>
 
-    <!-- Body -->
+    <!-- Scrollable body - wraps content in ScrollView for scroll up/down -->
+    <ScrollView
+        android:id="@+id/modMenuScrollView"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:maxHeight="420dp"
+        android:fillViewport="false"
+        android:scrollbars="vertical"
+        android:fadeScrollbars="true">
+
     <LinearLayout
         android:id="@+id/modMenuBody"
         android:layout_width="match_parent"
@@ -129,4 +138,6 @@
             android:textSize="10sp"
             android:textColor="@color/text_secondary"/>
     </LinearLayout>
+
+    </ScrollView>
 </LinearLayout>
