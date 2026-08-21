@@ -283,14 +283,13 @@ class YoloDetector(
                     }
                     // Apply sigmoid only if needed (for the whole row, not per-value,
                     // to avoid mixing sigmoid-activated and raw values)
-                    val finalScores = if (rowLooksLikeLogits) {
-                        DoubleArray(scores.size) { i -> sigmoid(scores[i]).toDouble() }.also { sd ->
-                            for (i in sd.indices) scores[i] = sd[i].toFloat()
+                    if (rowLooksLikeLogits) {
+                        for (i in scores.indices) {
+                            scores[i] = sigmoid(scores[i])
                         }
-                        scores
                     }
-                    for (i in finalScores.indices) {
-                        val s = finalScores[i].coerceIn(0f, 1f)
+                    for (i in scores.indices) {
+                        val s = scores[i].coerceIn(0f, 1f)
                         if (s > bestScore) {
                             bestScore = s
                             bestClass = i
