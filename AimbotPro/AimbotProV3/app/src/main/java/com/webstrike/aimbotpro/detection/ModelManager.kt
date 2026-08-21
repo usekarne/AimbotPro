@@ -38,15 +38,16 @@ object ModelManager {
     fun init(context: Context) {
         lock.withLock {
             if (initialized) return@withLock
+            val forceDemo = com.webstrike.aimbotpro.config.FeatureFlags.forceDemo
             val appCtx = context.applicationContext
             labels = loadLabels(appCtx)
             val loaded = loadInterpreter(appCtx)
             interpreter = loaded
-            demoMode = loaded == null
+            demoMode = loaded == null || forceDemo
             initialized = true
             Logger.w(
                 TAG,
-                "init done — demoMode=$demoMode, labels=${labels.size}, " +
+                "init done — demoMode=$demoMode, forceDemo=$forceDemo, labels=${labels.size}, " +
                     "hasInterpreter=${interpreter != null}"
             )
         }

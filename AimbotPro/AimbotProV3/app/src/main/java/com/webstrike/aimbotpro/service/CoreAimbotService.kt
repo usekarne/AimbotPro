@@ -11,7 +11,9 @@ import android.media.projection.MediaProjectionManager
 import android.os.Build
 import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import android.os.PowerManager
+import android.widget.Toast
 import android.view.WindowManager
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
@@ -134,9 +136,18 @@ class CoreAimbotService : Service() {
      * (caller is responsible for calling [stopPipeline] and [stopSelf] when
      * this returns false).
      */
+    private fun showToast(msg: String) {
+        runCatching {
+            Handler(Looper.getMainLooper()).post {
+                Toast.makeText(this, msg, Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
     private fun startPipeline(): Boolean {
         // 1. Notification channel (idempotent — created once per process).
         createNotificationChannel()
+        showToast("Step 1/5: Notification OK")
 
         // 2. Start foreground FIRST — required before acquiring MediaProjection
         //    on Android 10+ (we'd be killed if we delayed).
@@ -150,6 +161,7 @@ class CoreAimbotService : Service() {
                 ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION
             else 0
         )
+        showToast("Step 2/5: Foreground service started")
 
         // 3. Acquire MediaProjection from the holder (set by MainActivity).
         //    consume() atomically reads AND clears the holder — Android 14+
@@ -158,6 +170,7 @@ class CoreAimbotService : Service() {
         if (resultData == null) {
             Logger.e(TAG, "START failed — no MediaProjection result in holder. " +
                     "Did MainActivity call MediaProjectionHolder.set() before sending START?")
+            showToast("FAILED at Step 3: No MediaProjection result")
             return false
         }
 
@@ -165,6 +178,7 @@ class CoreAimbotService : Service() {
             as? MediaProjectionManager
         if (projectionManager == null) {
             Logger.e(TAG, "MediaProjectionManager service unavailable")
+            showToast("FAILED at Step 3: MediaProjectionManager unavailable")
             return false
         }
 
@@ -172,20 +186,24 @@ class CoreAimbotService : Service() {
             projectionManager.getMediaProjection(resultCode, resultData)
         }.getOrElse {
             Logger.e(TAG, "getMediaProjection failed: ${it.message}", it)
+            showToast("FAILED at Step 3: getMediaProjection failed")
             return false
         } ?: run {
             Logger.e(TAG, "getMediaProjection returned null — consent revoked?")
+            showToast("FAILED at Step 3: getMediaProjection returned null")
             return false
         }
 
         projection = proj
         proj.registerCallback(projectionCallback, Handler(mainLooper))
         Logger.i(TAG, "MediaProjection acquired")
+        showToast("Step 3/5: Screen capture permission OK")
 
         // 4. Boot ModelManager + YoloDetector.
         ModelManager.init(this)
         FeatureFlags.demoMode = ModelManager.isDemoMode()
         if (FeatureFlags.demoMode) Telemetry.count(Telemetry.Model.DEMO_MODE)
+        showToast("Step 4/5: Model ${if (FeatureFlags.demoMode) "NOT loaded (demo mode)" else "loaded OK"}")
         val det = YoloDetector(ModelManager)
         detector = det
 
@@ -208,6 +226,7 @@ class CoreAimbotService : Service() {
         val windowManager = getSystemService(Context.WINDOW_SERVICE) as? WindowManager
         if (windowManager == null) {
             Logger.e(TAG, "WindowManager unavailable — overlay cannot show")
+            showToast("FAILED at Step 5: WindowManager unavailable")
             return false
         }
         val overlay = ModMenuController(this, windowManager)
@@ -235,6 +254,7 @@ class CoreAimbotService : Service() {
         runCatching { overlay.show() }.onFailure {
             Logger.w(TAG, "overlay.show() failed: ${it.message}")
         }
+        showToast("Step 5/5: Overlay shown — switching to game")
         overlay.updateStatus(
             when {
                 FeatureFlags.demoMode -> Constants.Misc.DEMO_MODE_TEXT
@@ -245,6 +265,7 @@ class CoreAimbotService : Service() {
 
         // 10. Engine coroutine loop last — it consumes from the frame buffer.
         engine.start(scope)
+        showToast("Engine running — aimbot is ACTIVE")
 
         // 10b. EngineWatchdog — monitors the inference loop for stalls.
         //     Calls back on the watchdog thread if no frame is processed

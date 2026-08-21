@@ -38,6 +38,7 @@ object FeatureFlags {
     // ---- Runtime state (non-persisted) ----
     @Volatile var serviceRunning: Boolean = false
     @Volatile var demoMode: Boolean = false
+    @Volatile var forceDemo: Boolean = false
 
     private val listeners = CopyOnWriteArrayList<(String, Any) -> Unit>()
 
@@ -62,6 +63,8 @@ object FeatureFlags {
         aimSmoothness = settings.getFloat(Keys.AIM_SMOOTH, Constants.Aim.DEFAULT_SMOOTHNESS)
         triggerDelayMs = settings.getLong(Keys.TRIGGER_DELAY, Constants.Aim.DEFAULT_TRIGGER_DELAY_MS)
         minConfidence = settings.getFloat(Keys.MIN_CONF, Constants.Detection.DEFAULT_CONF_THRESHOLD)
+
+        forceDemo = settings.getBool(Keys.FORCE_DEMO, false)
     }
 
     fun setBool(key: String, value: Boolean) {
@@ -82,6 +85,7 @@ object FeatureFlags {
             Keys.ESP_NAMES -> espNamesEnabled = value
             Keys.FOV_CIRCLE -> fovCircleEnabled = value
             Keys.CROSSHAIR -> crosshairEnabled = value
+            Keys.FORCE_DEMO -> forceDemo = value
         }
         SettingsManager.get().setBool(key, value)
         notify(key, value)
@@ -143,6 +147,7 @@ object FeatureFlags {
         const val ESP_NAMES = "feat.esp.names"
         const val FOV_CIRCLE = "feat.fov.circle"
         const val CROSSHAIR = "feat.crosshair"
+        const val FORCE_DEMO = "feat.force_demo"
         // sliders
         const val AIM_SPEED = "slider.aim.speed"
         const val AIM_FOV = "slider.aim.fov"
@@ -155,7 +160,8 @@ object FeatureFlags {
         /** All known boolean toggle keys. */
         val BOOL_KEYS: Set<String> = setOf(
             AIMBOT, TRIGGER, RECOIL, SMOOTH, SILENT, HEADSHOT, SCROLL,
-            ESP_BOXES, ESP_LINES, ESP_DIST, ESP_NAMES, FOV_CIRCLE, CROSSHAIR
+            ESP_BOXES, ESP_LINES, ESP_DIST, ESP_NAMES, FOV_CIRCLE, CROSSHAIR,
+            FORCE_DEMO
         )
         /** All known float slider keys. */
         val FLOAT_KEYS: Set<String> = setOf(

@@ -147,18 +147,46 @@ class YoloDetector(
             Logger.w(TAG, "Model output shape: ${outputShape.toList()}, labels=${labels.size}")
         }
 
-        val nDet = outputShape[1]
-        val m = outputShape[2]
-        val outputArray = acquireOutputArray(outputShape, nDet, m)
-
-        // 4. Run inference.
-        outputsMap.clear()
-        outputsMap[0] = outputArray
-        try {
+        // Handle transposed output [1, 84, 8400] → [1, 8400, 84]
+        val nDet: Int
+        val m: Int
+        val outputArray: Array<Array<FloatArray>>
+        if (outputShape.size == 3 && outputShape[1] == 84 && outputShape[2] == 8400) {
+            Logger.w(TAG, "Transposed output detected [1,84,8400] — transposing to [1,8400,84]")
+            nDet = 8400
+            m = 84
+            // Allocate for [1, 8400, 84]
+            val transposedArray = Array(1) { Array(nDet) { FloatArray(m) } }
+            // The actual output from TFLite is [1, 84, 8400] — read it into a temp array
+            val rawArray = Array(1) { Array(84) { FloatArray(8400) } }
+            outputsMap[0] = rawArray
             interpreter.runForMultipleInputsOutputs(inputsArray, outputsMap)
-        } catch (t: Throwable) {
-            Logger.e(TAG, "Inference failed", t)
-            return@withLock Detection.empty()
+            // Transpose: rawArray[0][c][i] → transposedArray[0][i][c]
+            for (i in 0 until nDet) {
+                for (c in 0 until m) {
+                    transposedArray[0][i][c] = rawArray[0][c][i]
+                }
+            }
+            outputArray = transposedArray
+            // Log first row's first 6 values for diagnostics
+            val sampleRow = outputArray[0][0]
+            Logger.w(TAG, "Sample output [0]: ${sampleRow.take(6).map { String.format("%.4f", it) }}")
+        } else {
+            // Standard [1, N, M] output
+            nDet = outputShape[1]
+            m = outputShape[2]
+            outputArray = acquireOutputArray(outputShape, nDet, m)
+            outputsMap.clear()
+            outputsMap[0] = outputArray
+            try {
+                interpreter.runForMultipleInputsOutputs(inputsArray, outputsMap)
+            } catch (t: Throwable) {
+                Logger.e(TAG, "Inference failed", t)
+                return@withLock Detection.empty()
+            }
+            // Log first row's first 6 values for diagnostics
+            val sampleRow = outputArray[0][0]
+            Logger.w(TAG, "Sample output [0]: ${sampleRow.take(6).map { String.format("%.4f", it) }}")
         }
 
         // 5. Parse + inline-filter.
@@ -241,18 +269,32 @@ class YoloDetector(
                     // YOLOv5 / raw / our converted YOLOv8: [cx, cy, w, h, cls0, cls1, ...]
                     var bestScore = 0f
                     var bestClass = -1
+                    var rowLooksLikeLogits = false
                     var c = 4
+                    val scores = FloatArray(m - 4)
                     while (c < m) {
-                        var s = row[c]
-                        // Apply sigmoid only if value looks like a raw logit
-                        // (outside the [0,1] probability range). This handles
-                        // float16 drift without warping already-sigmoided values.
-                        if (s < 0f || s > 1f) s = sigmoid(s)
+                        val raw = row[c]
+                        // Detect if this row contains logits (any value outside [0,1])
+                        if (!rowLooksLikeLogits && (raw < -0.5f || raw > 1.5f)) {
+                            rowLooksLikeLogits = true
+                        }
+                        scores[c - 4] = raw
+                        c++
+                    }
+                    // Apply sigmoid only if needed (for the whole row, not per-value,
+                    // to avoid mixing sigmoid-activated and raw values)
+                    val finalScores = if (rowLooksLikeLogits) {
+                        DoubleArray(scores.size) { i -> sigmoid(scores[i]).toDouble() }.also { sd ->
+                            for (i in sd.indices) scores[i] = sd[i].toFloat()
+                        }
+                        scores
+                    }
+                    for (i in finalScores.indices) {
+                        val s = finalScores[i].coerceIn(0f, 1f)
                         if (s > bestScore) {
                             bestScore = s
-                            bestClass = c - 4
+                            bestClass = i
                         }
-                        c++
                     }
                     if (bestScore < confThreshold) continue
                     if (bestClass != targetClass) continue

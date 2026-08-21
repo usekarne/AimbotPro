@@ -231,7 +231,27 @@ class ModMenuView(
     // ---------- Toggles ----------
 
     private fun populateToggles() {
-        // Section AIM (6 toggles)
+        // Section AIM (6 toggles + force demo)
+        // Force Demo toggle (uses hardcoded label since no string resource)
+        run forceDemoToggle@ {
+            val row = LayoutInflater.from(context).inflate(R.layout.mod_menu_item_toggle, sectionAim, false)
+            val icon = row.findViewById<ImageView>(R.id.itemIcon)
+            val label = row.findViewById<TextView>(R.id.itemLabel)
+            val bg = row.findViewById<View>(R.id.toggleBg)
+            val thumb = row.findViewById<View>(R.id.toggleThumb)
+            icon.setImageResource(R.drawable.ic_power)
+            label.text = "Force Demo Mode"
+            val handle = ToggleRow(row, bg, thumb, FeatureFlags.forceDemo)
+            applyToggleVisual(handle, FeatureFlags.forceDemo, animate = false)
+            toggleRows[FeatureFlags.Keys.FORCE_DEMO] = handle
+            row.setOnClickListener {
+                val next = !handle.current
+                handle.current = next
+                applyToggleVisual(handle, next, animate = true)
+                FeatureFlags.setBool(FeatureFlags.Keys.FORCE_DEMO, next)
+            }
+            sectionAim.addView(row, 0)  // Add at the top of AIM section
+        }
         addToggle(sectionAim, FeatureFlags.Keys.AIMBOT,   R.string.feat_aimbot,         R.drawable.ic_aimbot,     FeatureFlags.aimbotEnabled)
         addToggle(sectionAim, FeatureFlags.Keys.TRIGGER,  R.string.feat_triggerbot,    R.drawable.ic_power,     FeatureFlags.triggerBotEnabled)
         addToggle(sectionAim, FeatureFlags.Keys.RECOIL,   R.string.feat_recoil,        R.drawable.ic_power,     FeatureFlags.recoilControlEnabled)
