@@ -168,6 +168,26 @@ object InputInjector {
     /** Current cached screen height (0 if never refreshed). */
     fun screenHeight(): Int = screenHeight
 
+    /**
+     * Dispatch a scroll-up gesture (look up in-game).
+     * Implemented as an upward swipe at screen centre.
+     * @param amountPx scroll distance in pixels (default 200 = moderate scroll)
+     */
+    fun scrollUp(amountPx: Float = DEFAULT_SCROLL_AMOUNT_PX): Boolean {
+        return dispatchMove(0f, -amountPx, SCROLL_DURATION_MS)
+    }
+
+    /**
+     * Dispatch a scroll-down gesture (look down in-game).
+     * Implemented as a downward swipe at screen centre.
+     * @param amountPx scroll distance in pixels (default 200 = moderate scroll)
+     */
+    fun scrollDown(amountPx: Float = DEFAULT_SCROLL_AMOUNT_PX): Boolean {
+        return dispatchMove(0f, amountPx, SCROLL_DURATION_MS)
+    }
+
     private const val DEFAULT_MOVE_DURATION_MS = 16L
+    private const val DEFAULT_SCROLL_AMOUNT_PX = 200f
+    private const val SCROLL_DURATION_MS = 50L  // longer for smooth scroll feel
     private const val FALLBACK_CENTER = 540f // half of 1080 — works for FHD phones
 }

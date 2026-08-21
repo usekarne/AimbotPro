@@ -11,12 +11,12 @@ import com.webstrike.aimbotpro.utils.Logger
  * target is sufficiently close to the crosshair and enough time has
  * elapsed since the last shot.
  *
- * ## Headshot Mode Integration (v5)
- * In headshot mode, the fire zone is MUCH tighter (15% of FOV instead of 30%)
- * and the minimum delay is reduced. Combined with the AimCalculator's
- * instant-snap behavior, this delivers the "one-tap headshot" experience:
- * as soon as a target enters the aim zone and the crosshair is near the head,
- * the bot fires immediately.
+ * ## Headshot Mode Integration (v6)
+ * In headshot mode, the fire zone is VERY tight (10% of FOV) and the
+ * minimum delay is drastically reduced (30ms = 33 rounds/sec). Combined
+ * with the AimCalculator's instant-snap behavior, this delivers the
+ * "one-tap headshot" experience: as soon as a target enters the aim
+ * zone and the crosshair is near the head, the bot fires immediately.
  */
 class TriggerBot(private val touchSimulator: TouchSimulator) {
 
@@ -45,7 +45,7 @@ class TriggerBot(private val touchSimulator: TouchSimulator) {
         val headshotMode = FeatureFlags.headshotModeEnabled
         val effectiveDistance = if (headshotMode) {
             // Use head region distance instead of body center
-            val headY = target.box.top + target.box.height() * 0.12f
+            val headY = target.box.top + target.box.height() * 0.10f
             val headDx = cx - screenCenter.x
             val headDy = headY - screenCenter.y
             Math.hypot(headDx.toDouble(), headDy.toDouble()).toFloat()
@@ -55,15 +55,15 @@ class TriggerBot(private val touchSimulator: TouchSimulator) {
 
         if (!effectiveDistance.isFinite()) return false
 
-        // Fire zone: tighter in headshot mode (15% vs 30%)
+        // Fire zone: tighter in headshot mode (10% vs 30%)
         val fireFraction = if (headshotMode) HEADSHOT_FIRE_ZONE_FRACTION else NORMAL_FIRE_ZONE_FRACTION
         val fireZoneRadius = fovRadiusPx * fireFraction
         if (effectiveDistance > fireZoneRadius) return false
 
-        // Debounce — shorter in headshot mode for rapid fire
+        // Debounce — MUCH shorter in headshot mode for rapid fire
         val nowMs = android.os.SystemClock.elapsedRealtimeNanos() / 1_000_000L
         val delay = if (headshotMode) {
-            (FeatureFlags.triggerDelayMs * 0.5f).toLong().coerceAtLeast(30L)
+            HEADSHOT_MIN_DELAY_MS
         } else {
             FeatureFlags.triggerDelayMs
         }
@@ -86,7 +86,10 @@ class TriggerBot(private val touchSimulator: TouchSimulator) {
         /** Normal fire zone = 30% of FOV circle radius. */
         private const val NORMAL_FIRE_ZONE_FRACTION = 0.3f
 
-        /** Headshot fire zone = 15% of FOV (tighter for precise headshots). */
-        private const val HEADSHOT_FIRE_ZONE_FRACTION = 0.15f
+        /** Headshot fire zone = 10% of FOV (tight for precise headshots). */
+        private const val HEADSHOT_FIRE_ZONE_FRACTION = 0.10f
+
+        /** Minimum fire delay in headshot mode (30ms = ~33 rounds/sec). */
+        private const val HEADSHOT_MIN_DELAY_MS = 30L
     }
 }

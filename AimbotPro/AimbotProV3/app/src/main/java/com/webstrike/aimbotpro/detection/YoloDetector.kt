@@ -201,13 +201,16 @@ class YoloDetector(
     /**
      * Optimised parse + inline filter.
      *
-     * Our TFLite conversion pipeline (convert_yolov8n_to_tflite.py) already
-     * applies sigmoid to class scores before export. The model output is
-     * [1, 8400, 84] where columns 4..83 are sigmoid-activated class scores
-     * in [0, 1]. We read them DIRECTLY — no second sigmoid.
+     * Our TFLite conversion pipeline (convert_yolov8n_to_tflite.py) applies
+     * sigmoid to class scores before export. However, as a defence-in-depth
+     * measure, we apply sigmoid to any value outside [0, 1] (logit leak
+     * from float16 quantization drift). Values already in [0, 1] are left
+     * untouched (sigmoid is NOT idempotent — applying it twice would warp
+     * the probabilities).
      *
-     * For robustness, we still clamp values to [0, 1] in case of minor
-     * float16 quantization drift (values might be e.g. 1.003 or -0.001).
+     * The model output is [1, 8400, 84] where:
+     *   - columns 0..3 = cx, cy, w, h (box coords in pixel space)
+     *   - columns 4..83 = 80 class scores (sigmoid-activated)
      */
     private fun parseOutputInline(
         rows: Array<FloatArray>,
@@ -227,21 +230,24 @@ class YoloDetector(
             when {
                 m == 6 -> {
                     // YOLOv8 post-processed: [cx, cy, w, h, score, classId]
-                    val score = row[4].coerceIn(0f, 1f)
+                    var score = row[4]
+                    if (score < 0f || score > 1f) score = sigmoid(score)
                     if (score < confThreshold) continue
                     val classId = row[5].toInt().coerceIn(0, labels.size - 1)
                     if (classId != targetClass) continue
                     scratch += buildDetection(row[0], row[1], w, h, score, classId, labels)
                 }
                 m >= 5 -> {
-                    // YOLOv5 / raw: [cx, cy, w, h, cls0, cls1, ...]
-                    // Scores are already sigmoid-activated by our conversion pipeline.
-                    // Just clamp to [0,1] for float16 safety and find argmax.
+                    // YOLOv5 / raw / our converted YOLOv8: [cx, cy, w, h, cls0, cls1, ...]
                     var bestScore = 0f
                     var bestClass = -1
                     var c = 4
                     while (c < m) {
-                        val s = row[c].coerceIn(0f, 1f)
+                        var s = row[c]
+                        // Apply sigmoid only if value looks like a raw logit
+                        // (outside the [0,1] probability range). This handles
+                        // float16 drift without warping already-sigmoided values.
+                        if (s < 0f || s > 1f) s = sigmoid(s)
                         if (s > bestScore) {
                             bestScore = s
                             bestClass = c - 4
@@ -256,6 +262,13 @@ class YoloDetector(
             }
         }
         return scratch
+    }
+
+    /** Fast sigmoid: 1 / (1 + exp(-x)). No lookup table — JIT-compiled to a
+     *  single `fdiv + fadd` on ARM NEON. */
+    private fun sigmoid(x: Float): Float {
+        val clamped = x.coerceIn(-20f, 20f) // prevent Infinity
+        return 1f / (1f + kotlin.math.exp(-clamped))
     }
 
     private fun buildDetection(

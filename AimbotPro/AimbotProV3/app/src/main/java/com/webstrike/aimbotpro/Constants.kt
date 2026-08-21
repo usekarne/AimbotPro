@@ -36,7 +36,7 @@ object Constants {
         const val DEFAULT_MODEL_NAME = "yolov8n.tflite"
         const val DEFAULT_LABELS_NAME = "coco_labels.txt"
         const val INPUT_SIZE = 640
-        const val DEFAULT_CONF_THRESHOLD = 0.35f
+        const val DEFAULT_CONF_THRESHOLD = 0.25f
         const val DEFAULT_IOU_THRESHOLD = 0.45f
         const val DEFAULT_MAX_DETECTIONS = 50
         const val HUMAN_CLASS_INDEX = 0  // COCO 'person'

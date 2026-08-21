@@ -238,6 +238,7 @@ class ModMenuView(
         addToggle(sectionAim, FeatureFlags.Keys.SMOOTH,  R.string.feat_smooth,        R.drawable.ic_power,     FeatureFlags.aimSmoothEnabled)
         addToggle(sectionAim, FeatureFlags.Keys.SILENT,  R.string.feat_silent_aim,    R.drawable.ic_aimbot,     FeatureFlags.silentAimEnabled)
         addToggle(sectionAim, FeatureFlags.Keys.HEADSHOT, R.string.feat_headshot_mode, R.drawable.ic_crosshair,  FeatureFlags.headshotModeEnabled)
+        addToggle(sectionAim, FeatureFlags.Keys.SCROLL, R.string.feat_scroll, R.drawable.ic_drag_handle, FeatureFlags.scrollEnabled)
         // Section VISUAL (6 toggles)
         addToggle(sectionVisual, FeatureFlags.Keys.ESP_BOXES, R.string.feat_esp,         R.drawable.ic_esp,       FeatureFlags.espBoxesEnabled)
         addToggle(sectionVisual, FeatureFlags.Keys.ESP_LINES, R.string.feat_esp_lines,   R.drawable.ic_esp,       FeatureFlags.espLinesEnabled)
@@ -245,6 +246,54 @@ class ModMenuView(
         addToggle(sectionVisual, FeatureFlags.Keys.ESP_NAMES, R.string.feat_esp_names,  R.drawable.ic_esp,       FeatureFlags.espNamesEnabled)
         addToggle(sectionVisual, FeatureFlags.Keys.FOV_CIRCLE, R.string.feat_fov_circle, R.drawable.ic_fov,        FeatureFlags.fovCircleEnabled)
         addToggle(sectionVisual, FeatureFlags.Keys.CROSSHAIR, R.string.feat_crosshair,   R.drawable.ic_crosshair, FeatureFlags.crosshairEnabled)
+
+        // Scroll Up/Down action buttons
+        addScrollButtons(sectionAim)
+    }
+
+    /**
+     * Add two small action buttons: SCROLL UP and SCROLL DOWN.
+     * These dispatch vertical swipe gestures via InputInjector.
+     */
+    private fun addScrollButtons(parent: LinearLayout) {
+        val btnContainer = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(8, 12, 8, 4)
+        }
+
+        val btnParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+
+        // SCROLL UP button
+        val btnUp = android.widget.Button(context).apply {
+            text = "▲ UP"
+            textSize = 11f
+            setTextColor(0xFFFFFFFF.toInt())
+            setBackgroundColor(0xCC1B5E20.toInt())
+            layoutParams = btnParams
+            setOnClickListener {
+                com.webstrike.aimbotpro.input.InputInjector.scrollUp(
+                    FeatureFlags.scrollAmount
+                )
+            }
+        }
+        btnContainer.addView(btnUp)
+
+        // SCROLL DOWN button
+        val btnDown = android.widget.Button(context).apply {
+            text = "▼ DOWN"
+            textSize = 11f
+            setTextColor(0xFFFFFFFF.toInt())
+            setBackgroundColor(0xCCB71C1C.toInt())
+            layoutParams = btnParams
+            setOnClickListener {
+                com.webstrike.aimbotpro.input.InputInjector.scrollDown(
+                    FeatureFlags.scrollAmount
+                )
+            }
+        }
+        btnContainer.addView(btnDown)
+
+        parent.addView(btnContainer)
     }
 
     /**
@@ -337,15 +386,25 @@ class ModMenuView(
             format = "%.0f ms"
         ) { v -> FeatureFlags.setLong(FeatureFlags.Keys.TRIGGER_DELAY, v.toLong()) }
 
-        // minConfidence: 0.3..0.95 → 0..100
+        // minConfidence: 0.1..0.95 → 0..100
         addSlider(
             parent = sectionMisc,
             key = FeatureFlags.Keys.MIN_CONF,
             labelResId = R.string.slider_confidence,
             initial = FeatureFlags.minConfidence,
-            min = 0.3f, max = 0.95f,
+            min = 0.1f, max = 0.95f,
             format = "%.2f"
         ) { v -> FeatureFlags.setFloat(FeatureFlags.Keys.MIN_CONF, v) }
+
+        // scrollAmount: 50..500 px → 0..100
+        addSlider(
+            parent = sectionMisc,
+            key = FeatureFlags.Keys.SCROLL_AMOUNT,
+            labelResId = R.string.slider_scroll_amount,
+            initial = FeatureFlags.scrollAmount,
+            min = 50f, max = 500f,
+            format = "%.0f px"
+        ) { v -> FeatureFlags.setFloat(FeatureFlags.Keys.SCROLL_AMOUNT, v) }
     }
 
     /**

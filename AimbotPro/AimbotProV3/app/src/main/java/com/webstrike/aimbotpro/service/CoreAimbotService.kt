@@ -236,7 +236,11 @@ class CoreAimbotService : Service() {
             Logger.w(TAG, "overlay.show() failed: ${it.message}")
         }
         overlay.updateStatus(
-            if (FeatureFlags.demoMode) Constants.Misc.DEMO_MODE_TEXT else "Active"
+            when {
+                FeatureFlags.demoMode -> Constants.Misc.DEMO_MODE_TEXT
+                FeatureFlags.headshotModeEnabled -> "HEADSHOT ACTIVE"
+                else -> "Active"
+            }
         )
 
         // 10. Engine coroutine loop last — it consumes from the frame buffer.

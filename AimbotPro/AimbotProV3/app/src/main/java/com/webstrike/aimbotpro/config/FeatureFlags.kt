@@ -18,6 +18,7 @@ object FeatureFlags {
     @Volatile var aimSmoothEnabled: Boolean = false
     @Volatile var silentAimEnabled: Boolean = false
     @Volatile var headshotModeEnabled: Boolean = true
+    @Volatile var scrollEnabled: Boolean = true
 
     @Volatile var espBoxesEnabled: Boolean = true
     @Volatile var espLinesEnabled: Boolean = false
@@ -32,6 +33,7 @@ object FeatureFlags {
     @Volatile var aimSmoothness: Float = Constants.Aim.DEFAULT_SMOOTHNESS
     @Volatile var triggerDelayMs: Long = Constants.Aim.DEFAULT_TRIGGER_DELAY_MS
     @Volatile var minConfidence: Float = Constants.Detection.DEFAULT_CONF_THRESHOLD
+    @Volatile var scrollAmount: Float = 200f
 
     // ---- Runtime state (non-persisted) ----
     @Volatile var serviceRunning: Boolean = false
@@ -46,6 +48,7 @@ object FeatureFlags {
         aimSmoothEnabled = settings.getBool(Keys.SMOOTH, false)
         silentAimEnabled = settings.getBool(Keys.SILENT, false)
         headshotModeEnabled = settings.getBool(Keys.HEADSHOT, true)
+        scrollEnabled = settings.getBool(Keys.SCROLL, true)
 
         espBoxesEnabled = settings.getBool(Keys.ESP_BOXES, true)
         espLinesEnabled = settings.getBool(Keys.ESP_LINES, false)
@@ -72,6 +75,7 @@ object FeatureFlags {
             Keys.SMOOTH -> aimSmoothEnabled = value
             Keys.SILENT -> silentAimEnabled = value
             Keys.HEADSHOT -> headshotModeEnabled = value
+            Keys.SCROLL -> scrollEnabled = value
             Keys.ESP_BOXES -> espBoxesEnabled = value
             Keys.ESP_LINES -> espLinesEnabled = value
             Keys.ESP_DIST -> espDistanceEnabled = value
@@ -89,6 +93,7 @@ object FeatureFlags {
             Keys.AIM_FOV -> aimFov = value
             Keys.AIM_SMOOTH -> aimSmoothness = value
             Keys.MIN_CONF -> minConfidence = value
+            Keys.SCROLL_AMOUNT -> scrollAmount = value
         }
         SettingsManager.get().setFloat(key, value)
         notify(key, value)
@@ -131,6 +136,7 @@ object FeatureFlags {
         const val SMOOTH = "feat.smooth"
         const val SILENT = "feat.silent"
         const val HEADSHOT = "feat.headshot"
+        const val SCROLL = "feat.scroll"
         const val ESP_BOXES = "feat.esp.boxes"
         const val ESP_LINES = "feat.esp.lines"
         const val ESP_DIST = "feat.esp.dist"
@@ -143,16 +149,17 @@ object FeatureFlags {
         const val AIM_SMOOTH = "slider.aim.smooth"
         const val TRIGGER_DELAY = "slider.trigger.delay"
         const val MIN_CONF = "slider.confidence"
+        const val SCROLL_AMOUNT = "slider.scroll.amount"
 
         // ---- Validation set (used by CoreAimbotService to reject bogus TOGGLE_FEATURE intents) ----
         /** All known boolean toggle keys. */
         val BOOL_KEYS: Set<String> = setOf(
-            AIMBOT, TRIGGER, RECOIL, SMOOTH, SILENT, HEADSHOT,
+            AIMBOT, TRIGGER, RECOIL, SMOOTH, SILENT, HEADSHOT, SCROLL,
             ESP_BOXES, ESP_LINES, ESP_DIST, ESP_NAMES, FOV_CIRCLE, CROSSHAIR
         )
         /** All known float slider keys. */
         val FLOAT_KEYS: Set<String> = setOf(
-            AIM_SPEED, AIM_FOV, AIM_SMOOTH, MIN_CONF
+            AIM_SPEED, AIM_FOV, AIM_SMOOTH, MIN_CONF, SCROLL_AMOUNT
         )
         /** All known long keys. */
         val LONG_KEYS: Set<String> = setOf(

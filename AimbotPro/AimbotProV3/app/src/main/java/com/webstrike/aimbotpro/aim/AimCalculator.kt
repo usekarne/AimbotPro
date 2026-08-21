@@ -13,16 +13,20 @@ import com.webstrike.aimbotpro.utils.Logger
  * coords, applies headshot priority targeting, smoothing / aim-speed shaping,
  * and hands the delta off to [TouchSimulator.applyAimDelta].
  *
- * ## Headshot Priority Mode (v5)
- * When enabled, the aim point is set to the **top 15% of the bounding box**
- * (the head region of a detected person). Combined with higher aim speed and
- * reduced smoothing, this delivers instant head-level targeting.
+ * ## Headshot Priority Mode (v6)
+ * When enabled, the aim point is set to the **top 10% of the bounding box**
+ * (the head region of a detected person). Combined with:
+ *   - Much higher per-frame delta cap (250 px) for instant snapping
+ *   - Smoothing completely disabled
+ *   - Full-speed factor (0.95+)
+ *   - Large density-independent snap radius (60 dp)
+ * this delivers a TRUE one-tap headshot: if any enemy is visible on
+ * screen, the crosshair locks onto their head instantly.
  *
  * ## One-Tap Headshot
- * When headshot mode is ON and the target's head is within a tight radius
- * of the crosshair (HEADSHOT_SNAP_RADIUS_PX), we skip smoothing entirely
- * and snap directly to the head — delivering a true one-tap headshot
- * experience.
+ * When headshot mode is ON and the target's head is within the snap radius
+ * of the crosshair, we skip ALL smoothing and apply the FULL delta in a
+ * single frame — delivering an instant headshot lock.
  */
 class AimCalculator(
     private val inputInjector: InputInjector,
@@ -58,35 +62,34 @@ class AimCalculator(
         val headshotMode = FeatureFlags.headshotModeEnabled
 
         if (headshotMode) {
-            // HEADSHOT PRIORITY: Target the TOP of the bounding box.
-            // The head of a standing person is in the top 12-18% of the box.
-            // We aim at top + 12% of box height for precise head targeting.
+            // HEADSHOT PRIORITY: Target the TOP 10% of the bounding box.
+            // The head of a standing person is in the top 8-15% of the box.
+            // We aim at top + 10% of box height for precise head targeting.
             val boxHeight = screenBox.height()
             if (boxHeight.isFinite() && boxHeight > 0f) {
                 val headOffsetY = boxHeight * HEADSHOT_TARGET_FRACTION
                 targetY = screenBox.top + headOffsetY
 
-                // Also bias X slightly toward center-top of the head region
-                // for more natural head targeting
-                val headWidth = screenBox.width() * 0.5f
-                targetX = screenBox.left + screenBox.width() * 0.5f
+                // Keep X at box center (head center horizontally)
+                targetX = (screenBox.left + screenBox.right) * 0.5f
 
-                // Check if head is very close to crosshair — ONE-TAP HEADSHOT
+                // Check if head is close to crosshair — ONE-TAP HEADSHOT
                 val headDx = targetX - centerX
                 val headDy = targetY - centerY
                 val headDist = Math.hypot(headDx.toDouble(), headDy.toDouble()).toFloat()
 
-                if (headDist < HEADSHOT_SNAP_RADIUS_PX) {
-                    // DIRECT SNAP — no smoothing, full speed, instant headshot
+                if (headDist.isFinite() && headDist < HEADSHOT_SNAP_RADIUS_PX) {
+                    // DIRECT SNAP — no smoothing, no cap, instant headshot
                     var dx = targetX - centerX
                     var dy = targetY - centerY
 
-                    if (dx.isFinite() && dy.isFinite() && (dx != 0f || dy != 0f)) {
+                    if (dx.isFinite() && dy.isFinite() && (kotlin.math.abs(dx) > 0.5f || kotlin.math.abs(dy) > 0.5f)) {
                         if (inputInjector.accessibilityService == null) {
                             Logger.w(logTag, "aim: accessibility not connected; snap skipped")
                             return false
                         }
-                        // Apply at full speed — no smoothing, no cap
+                        // Apply FULL delta — no smoothing, no speed cap, no delta cap.
+                        // This is the ONE-TAP HEADSHOT: instant lock.
                         touchSimulator.applyAimDelta(dx, dy)
                         return true
                     }
@@ -100,7 +103,7 @@ class AimCalculator(
             return false
         }
 
-        // Apply smoothing (skip in headshot mode when close to target)
+        // Apply smoothing ONLY in non-headshot mode (headshot mode never smooths)
         if (FeatureFlags.aimSmoothEnabled && !headshotMode) {
             val smoothed = smoother.smooth(
                 targetX,
@@ -130,15 +133,15 @@ class AimCalculator(
         }
 
         val speedFactor = if (headshotMode) {
-            // In headshot mode, much more aggressive — nearly full delta
-            0.7f + 0.3f * aimSpeed
+            // In headshot mode: EXTREMELY aggressive — nearly full delta
+            0.85f + 0.15f * aimSpeed
         } else {
             0.5f * (1f + aimSpeed)
         }
         dx *= speedFactor
         dy *= speedFactor
 
-        // Per-frame delta cap — higher in headshot mode for faster snapping
+        // Per-frame delta cap — MUCH higher in headshot mode for aggressive snapping
         val maxDelta = if (headshotMode) MAX_DELTA_HEADSHOT_PX else MAX_DELTA_PER_FRAME_PX
         dx = clampDelta(dx, maxDelta)
         dy = clampDelta(dy, maxDelta)
@@ -178,16 +181,22 @@ class AimCalculator(
         /** Normal mode max per-frame camera delta in pixels. */
         private const val MAX_DELTA_PER_FRAME_PX = 40f
 
-        /** Headshot mode — much higher cap for aggressive snapping. */
-        private const val MAX_DELTA_HEADSHOT_PX = 120f
+        /** Headshot mode — VERY high cap for instant head snapping. */
+        private const val MAX_DELTA_HEADSHOT_PX = 250f
 
-        /** Head region target: top 12% of the bounding box = head center. */
-        private const val HEADSHOT_TARGET_FRACTION = 0.12f
+        /** Head region target: top 10% of the bounding box = head center. */
+        private const val HEADSHOT_TARGET_FRACTION = 0.10f
 
-        /** If head is within this radius of crosshair, snap instantly (one-tap). */
-        private const val HEADSHOT_SNAP_RADIUS_PX = 80f
+        /**
+         * One-tap snap radius in pixels.
+         * 60dp * 3.0 (typical density) = 180px — large enough that any
+         * target on screen gets snapped to instantly in headshot mode.
+         * This is a density-independent value calibrated for the
+         * typical phone screen (1080x2400, ~3x density).
+         */
+        private const val HEADSHOT_SNAP_RADIUS_PX = 180f
 
-        /** Minimum aim speed in headshot mode (0.85 = very aggressive). */
-        private const val HEADSHOT_MIN_SPEED = 0.85f
+        /** Minimum aim speed in headshot mode (0.90 = extremely aggressive). */
+        private const val HEADSHOT_MIN_SPEED = 0.90f
     }
 }

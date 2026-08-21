@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">AimbotPro</string>
-    <string name="app_version">v5.0.0</string>
+    <string name="app_version">v6.0.0</string>
 
     <!-- Notification -->
     <string name="notif_channel_id">aimbot_pro_channel</string>
@@ -15,7 +15,7 @@
     <string name="accessibility_service_desc">Synthetic gesture dispatch for aim assist in your own games.</string>
 
     <!-- Main activity -->
-    <string name="title_main">AimbotPro v5</string>
+    <string name="title_main">AimbotPro v6</string>
     <string name="subtitle_main">Headshot Priority AI Aimbot — YOLOv8 TFLite</string>
 
     <string name="btn_start">START AIMBOT</string>
@@ -53,6 +53,7 @@
     <string name="feat_silent_aim">Silent Aim</string>
     <string name="feat_anti_recoil">Anti-Recoil</string>
     <string name="feat_headshot_mode">Headshot Priority</string>
+    <string name="feat_scroll">Scroll Up/Down</string>
 
     <!-- Sliders -->
     <string name="slider_aim_speed">Aim Speed</string>
@@ -60,6 +61,7 @@
     <string name="slider_aim_smooth">Smoothness</string>
     <string name="slider_trigger_delay">Trigger Delay (ms)</string>
     <string name="slider_confidence">Min Confidence</string>
+    <string name="slider_scroll_amount">Scroll Amount</string>
 
     <!-- Permissions -->
     <string name="perm_overlay_required">Overlay permission required for floating mod menu.</string>
